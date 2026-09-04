@@ -1,0 +1,38 @@
+# Postgres local cho phát triển.
+#
+#   cd infra && docker compose up -d
+#
+# Các file trong ./postgres tự chạy theo thứ tự tên khi khởi tạo LẦN ĐẦU:
+#   001_schema.sql     bảng, index, trigger, RLS
+#   002_app_role.sql   role remember_app + kiểm tra RLS
+#
+# ⚠️ Chúng chỉ chạy khi volume còn rỗng. Đổi schema rồi muốn chạy lại:
+#   docker compose down -v && docker compose up -d
+# (`-v` xoá volume — mất toàn bộ dữ liệu local)
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: remember-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: remember
+      POSTGRES_USER: postgres
+      # Chỉ dùng cho database local. Production dùng DATABASE_URL riêng.
+      POSTGRES_PASSWORD: postgres
+      # Khớp locale để so sánh chuỗi tiếng Việt hành xử giống nhau ở mọi máy.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    ports:
+      - '5432:5432'
+    volumes:
+      - remember-pgdata:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Chờ tới khi thật sự nhận query, không chỉ tới khi container "running".
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d remember']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  remember-pgdata:

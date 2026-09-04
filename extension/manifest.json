@@ -1,0 +1,65 @@
+{
+  "manifest_version": 3,
+  "name": "Remember",
+  "version": "0.10.2",
+  "description": "Hiện icon khi bôi đen text trên trang web, mở panel tra từ và lưu flashcard.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Remember",
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "exclude_matches": [
+        "*://chromewebstore.google.com/*",
+        "*://chrome.google.com/webstore/*",
+        "*://addons.mozilla.org/*"
+      ],
+      "js": [
+        "src/content/selection-icon.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": false
+    }
+  ],
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "offscreen",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://translate.googleapis.com/*",
+    "https://translate.google.com/*",
+    "https://freedictionaryapi.com/*",
+    "https://api.mymemory.translated.net/*"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "remember-app@localhost",
+      "strict_min_version": "115.0"
+    }
+  },
+  "optional_host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://*/*"
+  ]
+}

@@ -1,0 +1,37 @@
+# Repo này công khai trên GitHub. Mọi thứ dưới đây chứa bí mật hoặc rác build.
+# Đã kiểm: `.env.local` giữ Google client secret + mật khẩu DB production, và
+# `.next/cache/turbopack/*.sst` cũng chứa client secret (Turbopack cache lại giá trị
+# env lúc build) — nên phải chặn CẢ HAI, không chỉ file .env.
+
+# --- bí mật ---
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# --- build & cache ---
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- công cụ ---
+.vercel
+.idea/
+.vscode/
+*.log
+
+# --- hệ điều hành ---
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# --- file tạm khi thao tác DB (không bao giờ được commit) ---
+*.pw
+prod.url
+*.dburl

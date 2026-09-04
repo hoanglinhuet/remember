@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8" /><title>Remember audio</title></head>
+<body>
+  <!--
+    Offscreen document: chỗ duy nhất trong MV3 phát được audio.
+    - Service worker không có DOM nên không dùng được Audio().
+    - Content script thì bị CSP media-src của trang chặn.
+    Tài liệu này chạy trong context của extension nên không bị cả hai vấn đề trên.
+  -->
+  <script src="offscreen.js"></script>
+</body>
+</html>
