@@ -12,6 +12,7 @@ import {
 } from '@/lib/domain/modes';
 import type { GlossOption, QueueItem, Rating, StudyConfig, StudyMode } from '@/lib/domain/types';
 import { speak } from '@/lib/client/speech';
+import { IconClose, IconSpeaker, IconSpeakerSlow } from '../_components/Icons';
 
 /**
  * Phiên ôn kiểu Anki: hàng đợi ĐỘNG. Thẻ trả lời "Lại" quay lại trong cùng phiên khi hết
@@ -256,12 +257,29 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
 
   const goHome = () => router.push('/');
 
-  if (loading) return <p className="muted">Đang tải hàng đợi…</p>;
+  // Skeleton dựng đúng hình mặt thẻ thật, nên không có gì nhảy chỗ khi dữ liệu về.
+  if (loading) {
+    return (
+      <div className="study">
+        <div className="row">
+          <button className="iconbtn" onClick={goHome} aria-label="Thoát">
+            <IconClose size={22} />
+          </button>
+        </div>
+        <div className="progress" />
+        <div className="face" aria-busy="true" aria-label="Đang tải hàng đợi">
+          <span className="skel" style={{ width: 190, height: 34, borderRadius: 8 }} />
+          <span className="skel" style={{ width: 120, height: 14 }} />
+        </div>
+        <span className="skel" style={{ height: 60, borderRadius: 'var(--r-md)' }} />
+      </div>
+    );
+  }
 
   if (error && !item) {
     return (
       <div className="done stack">
-        <div className="big">⚠️</div>
+        <div className="big" style={{ color: 'var(--again)' }}>!</div>
         <h2 style={{ margin: 0 }}>{error}</h2>
         <button className="btn" onClick={() => window.location.reload()}>Thử lại</button>
         <button className="btn primary" onClick={goHome}>Về trang chính</button>
@@ -273,10 +291,10 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
     const secs = Math.max(0, Math.ceil(wait / 1000));
     return (
       <div className="done stack">
-        <div className="big">⏳</div>
-        <h2 style={{ margin: 0 }}>
-          Thẻ tiếp theo sau {secs > 60 ? `${Math.ceil(secs / 60)} phút` : `${secs}s`}
-        </h2>
+        <div className="big" style={{ color: 'var(--due)' }}>
+          {secs > 60 ? `${Math.ceil(secs / 60)}′` : `${secs}s`}
+        </div>
+        <h2 style={{ margin: 0 }}>Thẻ tiếp theo</h2>
         <p className="muted">
           Còn {learning.current.length} thẻ đang trong bậc thang học lại. Anki cũng chờ như vậy —
           khoảng nghỉ ngắn là một phần của cơ chế.
@@ -289,7 +307,9 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
   if (!item) {
     return (
       <div className="done stack">
-        <div className="big">{done ? '🎉' : '😴'}</div>
+        <span className={done ? 'ramp-full' : 'ramp-empty'} aria-hidden="true">
+          <i /><i /><i /><i /><i />
+        </span>
         <h2 style={{ margin: 0 }}>{done ? `Xong ${done} lượt ôn` : 'Không có thẻ đến hạn'}</h2>
         <p className="muted">
           {done
@@ -312,16 +332,20 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
   return (
     <div className="study">
       <div className="row">
-        <button className="icon ghost" onClick={goHome} aria-label="Thoát">✕</button>
-        <span className="muted">
-          còn {left + 1}
-          {learning.current.length ? ` · ${learning.current.length} học lại` : ''}
-        </span>
+        <button className="iconbtn" onClick={goHome} aria-label="Thoát">
+          <IconClose size={22} />
+        </button>
+        <span className="muted">còn {left + 1} thẻ</span>
+        {learning.current.length > 0 && (
+          <span className="muted" style={{ color: 'var(--muted-2)' }}>
+            {learning.current.length} học lại
+          </span>
+        )}
         <span className="spacer" />
         {/* Nút đọc phải ẩn khi từ đang bị ẩn: bấm là nghe ra đáp án ngay. */}
         {!hideFront && (
-          <button className="icon ghost" onClick={() => speak(card.front, card.langFrom)} aria-label="Đọc">
-            🔊
+          <button className="iconbtn" onClick={() => speak(card.front, card.langFrom)} aria-label="Đọc">
+            <IconSpeaker size={22} />
           </button>
         )}
       </div>
@@ -349,13 +373,14 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
               onClick={(e) => { e.stopPropagation(); speak(card.front, card.langFrom); }}
               aria-label="Phát lại"
             >
-              🔊
+              <IconSpeaker size={34} />
             </button>
             <button
               className="btn ghost"
               onClick={(e) => { e.stopPropagation(); speak(card.front, card.langFrom, 0.5); }}
             >
-              🐢 phát chậm
+              <IconSpeakerSlow size={18} />
+              <span style={{ marginLeft: 8 }}>Phát chậm</span>
             </button>
           </div>
         )}

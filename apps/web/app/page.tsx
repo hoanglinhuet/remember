@@ -1,12 +1,30 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { currentUser, initialOf } from '@/lib/server/auth/session';
+import { currentUser } from '@/lib/server/auth/session';
 import { getDb } from '@/lib/server/db';
 import { readConfig } from '@/lib/app/read-config';
 import { listDeckSummaries } from '@/lib/app/decks';
 import { LevelBar } from './_components/LevelBar';
 
 export const dynamic = 'force-dynamic';
+
+/** Hạn mức trong ngày, vẽ ra thành thanh thay vì nhét vào một dòng chữ. */
+function Meter({ label, used, cap }: { label: string; used: number; cap: number }) {
+  const pct = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+  return (
+    <div className="meter">
+      <div className="meter-head">
+        <b>{label}</b>
+        <span>
+          {used}/{cap}
+        </span>
+      </div>
+      <div className="meter-track">
+        <i style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
 
 /**
  * Server Component: dữ liệu lấy thẳng trong server, không cần round-trip API từ browser.
@@ -34,45 +52,77 @@ export default async function HomePage() {
       <div className="topbar">
         <div style={{ flex: 1 }}>
           <h1>Remember</h1>
-          <div className="sub">{totalCards} thẻ · hôm nay đã ôn {room.reviewsToday}</div>
+          <div className="sub">
+            {totalCards} thẻ trong {decks.length || 0} bộ
+          </div>
         </div>
-        <Link className="icon ghost" href="/lookup" aria-label="Tra từ">🔍</Link>
-        <Link className="icon ghost" href="/stats" aria-label="Thống kê">📊</Link>
-        <Link className="icon ghost" href="/connect" aria-label="Kết nối extension">🧩</Link>
-        <Link className="icon ghost" href="/settings" aria-label="Cài đặt">⚙</Link>
-        <Link className="icon ghost who on" href="/account" title={`${user.name} · ${user.email}`}>
-          {user.avatarUrl
-            ? <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" />
-            : initialOf(user.name)}
-        </Link>
       </div>
 
       <div className="stack">
-        {playable ? (
-          <Link className="btn primary big" href="/study">Ôn ngay · {playable} thẻ</Link>
-        ) : (
-          <span className="btn primary big disabled">
-            {dueAll + freshAll ? 'Hết hạn mức hôm nay' : 'Không có thẻ đến hạn'}
-          </span>
-        )}
+        {/* Toàn bộ độ mạnh của màn hình dồn vào đúng khối này; phần dưới để yên. */}
+        <section className="hero">
+          <div>
+            <div className="hero-label">Hôm nay</div>
+            <p className="hero-fig" style={{ margin: 0 }}>
+              <b>{playable}</b>
+              <span>thẻ để ôn</span>
+            </p>
+          </div>
 
-        <p className="muted" style={{ textAlign: 'center', margin: 0 }}>
-          hôm nay: {room.newToday}/{config.maxNew} thẻ mới · {room.reviewsToday}/{config.maxReview} lượt ôn
-        </p>
+          <div className="hero-meters">
+            <Meter label="Thẻ mới" used={room.newToday} cap={config.maxNew} />
+            <Meter label="Lượt ôn" used={room.reviewsToday} cap={config.maxReview} />
+          </div>
 
+          {playable ? (
+            <Link className="btn" href="/study">
+              Ôn ngay
+            </Link>
+          ) : (
+            <span className="btn disabled">
+              {dueAll + freshAll ? 'Hết hạn mức hôm nay' : 'Không có thẻ đến hạn'}
+            </span>
+          )}
+        </section>
+
+        {/* Trạng thái trống là lời mời hành động, không phải một câu thông báo. */}
         {!decks.length && (
-          <p className="empty">
-            Chưa có thẻ nào.<br />Lưu thẻ từ extension, hoặc tra từ rồi lưu.
-          </p>
+          <div className="emptybox">
+            <span className="ramp-empty" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+              <i />
+              <i />
+            </span>
+            <h2>Chưa có thẻ nào</h2>
+            <p>Lưu thẻ ngay khi đang đọc bằng extension, hoặc tra một từ rồi chọn nghĩa bạn muốn nhớ.</p>
+            <div className="stack">
+              <Link className="btn primary" href="/lookup">
+                Tra từ đầu tiên
+              </Link>
+              <Link className="btn" href="/connect">
+                Kết nối extension
+              </Link>
+            </div>
+          </div>
         )}
 
         {decks.map((d) => (
-          <Link key={d.id || 'orphan'} className="deck deck-col" href={`/study?deck=${d.id}`}>
-            <span className="deck-top">
-              <span className="deck-name">{d.name}</span>
-              <span className={`pill ${d.due ? 'due' : 'zero'}`} title="đến hạn">{d.due}</span>
-              <span className={`pill ${d.fresh ? 'fresh' : 'zero'}`} title="thẻ mới">{d.fresh}</span>
-              {d.suspended > 0 && <span className="pill susp" title="đang treo">{d.suspended}</span>}
+          <Link key={d.id || 'orphan'} className="deckrow" href={`/study?deck=${d.id}`}>
+            <span className="deckrow-top">
+              <span className="deck-tile" aria-hidden="true">
+                {d.name.trim().charAt(0).toUpperCase()}
+              </span>
+              <span className="deck-main">
+                <b>{d.name}</b>
+                {/* Số đếm mang luôn danh từ nên không cần chú giải riêng. */}
+                <span className="deck-counts">
+                  <span className={d.due ? 'n-due' : 'n-zero'}>{d.due} đến hạn</span>
+                  <span className={d.fresh ? 'n-new' : 'n-zero'}>{d.fresh} mới</span>
+                  {d.suspended > 0 && <span className="n-susp">{d.suspended} treo</span>}
+                </span>
+              </span>
             </span>
             <LevelBar levels={d.levels} />
           </Link>

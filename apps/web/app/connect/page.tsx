@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { IconBack } from '../_components/Icons';
 import { redirect } from 'next/navigation';
 import { currentUser } from '@/lib/server/auth/session';
 import ConnectClient from './ConnectClient';
@@ -12,7 +13,7 @@ export default async function ConnectPage() {
   return (
     <>
       <div className="topbar">
-        <Link className="icon ghost" href="/" aria-label="Quay lại">←</Link>
+        <Link className="iconbtn" href="/account" aria-label="Quay lại"><IconBack size={22} /></Link>
         <h1>Kết nối extension</h1>
       </div>
       <p className="muted">

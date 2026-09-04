@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { IconBack } from '../_components/Icons';
 import { redirect } from 'next/navigation';
 import { currentUser } from '@/lib/server/auth/session';
 import { getDb } from '@/lib/server/db';
@@ -16,7 +17,7 @@ export default async function SettingsPage() {
   return (
     <>
       <div className="topbar">
-        <Link className="icon ghost" href="/" aria-label="Quay lại">←</Link>
+        <Link className="iconbtn" href="/account" aria-label="Quay lại"><IconBack size={22} /></Link>
         <h1>Cài đặt</h1>
       </div>
       <SettingsForm initial={config} />

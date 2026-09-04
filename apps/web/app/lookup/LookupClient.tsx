@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { api, ApiFail } from '@/lib/client/api';
 import { lookup, POS_LABEL, type LookupResult, type SenseGroup } from '@/lib/client/lookup';
 import { speak } from '@/lib/client/speech';
+import { IconSpeaker } from '../_components/Icons';
 import { senseKey } from '@/lib/domain/day';
 import type { ExistingCard } from '@/lib/ports/queries';
 
@@ -251,7 +252,7 @@ export default function LookupClient({ decks }: { decks: { id: string; name: str
               )}
             </div>
             <button className="speakbtn" onClick={() => speak(q.trim(), res.detectedLang)} aria-label="Đọc">
-              🔊
+              <IconSpeaker size={20} />
             </button>
           </div>
 

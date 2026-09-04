@@ -1,28 +1,101 @@
+/**
+ * Token layer. Names in comments are the variables in the Figma collection
+ * "Remember" (design/figma-build.js is the authoritative spec) — change a colour
+ * here and nowhere else, then update the matching Figma variable.
+ *
+ * Colour is split into two layers that never share a hue:
+ *   IDENTITY (--cat-*, --accent) marks an area of the app. Carries no data.
+ *   DATA (--due, the four ratings, the five levels) always means something.
+ * That is why the primary action is its own token rather than reusing a rating
+ * or a level colour.
+ */
 :root {
   color-scheme: light dark;
-  --accent: #6d4aff;
-  --accent-soft: #f0ecff;
-  --fg: #1a1725;
-  --muted: #6f6a80;
-  --bg: #faf9fd;
-  --card: #ffffff;
-  --line: rgba(24, 16, 64, 0.12);
-  --again: #d94a5f;
-  --hard: #c07a1e;
-  --good: #17916f;
-  --easy: #3a7bd5;
-  --radius: 14px;
+
+  /* surfaces */
+  --bg: #f7f8fc;           /* bg/paper */
+  --card: #ffffff;         /* bg/surface */
+  --sunken: #eef0f8;       /* bg/sunken — inset, track, skeleton */
+  --action: #6b3bf5;       /* bg/action — primary action fill */
+  --on-action: #ffffff;    /* text/on-action */
+
+  /* text */
+  --fg: #16182e;           /* text/primary */
+  --muted: #5a6079;        /* text/secondary */
+  --muted-2: #8a90a8;      /* text/tertiary */
+
+  /* lines */
+  --line: #e6e9f3;         /* border/hairline */
+  --line-strong: #cdd2e2;  /* border/strong */
+
+  --accent: #6b3bf5;       /* accent */
+  --accent-soft: #efe9fe;  /* accent/soft */
+
+  /* the single hot signal, reserved for "đến hạn" */
+  --due: #e08a00;          /* signal/due */
+  --due-soft: #fff3d6;     /* signal/due-soft */
+
+  /* four ratings — categorical with valence, so divergent hues are correct */
+  --again: #ee2f58;
+  --hard: #e58a00;
+  --good: #00a879;
+  --easy: #1d7bff;
+
+  /* FIVE MEMORY LEVELS — ordinal data, so ONE sequential ramp, pale to deep.
+     Previously five unrelated hues, which reads as five categories instead of a
+     progression. Level 1 stays colourless on purpose: nothing remembered yet. */
+  --c1: #cbd0e2;
+  --c2: #b9a8fa;
+  --c3: #9276f7;
+  --c4: #6b3bf5;
+  --c5: #4718be;
+
+  /* identity hues: one per navigation destination and per study mode */
+  --cat-violet: #6b3bf5;  --cat-violet-soft: #efe9fe;
+  --cat-teal:   #00a6a0;  --cat-teal-soft:   #d8f6f4;
+  --cat-rose:   #ee3d7c;  --cat-rose-soft:   #ffe3ed;
+  --cat-blue:   #1d7bff;  --cat-blue-soft:   #e0edff;
+
+  /* radius is a hierarchy — bigger surface, bigger radius */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --radius: var(--r-lg);
+
   --tap: 48px; /* tap target tối thiểu trên mobile */
+  --tabbar: 78px; /* chiều cao tab bar đáy, kể cả safe area */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #ece9f5;
-    --muted: #9d97ad;
-    --bg: #141220;
-    --card: #1d1b26;
-    --line: rgba(255, 255, 255, 0.12);
-    --accent-soft: #2a2440;
+    --bg: #101223;
+    --card: #1b1e33;
+    --sunken: #15172a;
+    --action: #8b63ff;
+    --fg: #ededf7;
+    --muted: #a5aac2;
+    --muted-2: #767c96;
+    --line: #2a2e45;
+    --line-strong: #3d4259;
+    --accent: #9b7bff;
+    --accent-soft: #251f45;
+    --due: #ffc14d;
+    --due-soft: #332810;
+    --again: #ff6b8a;
+    --hard: #ffb03d;
+    --good: #2bd3a0;
+    --easy: #67a8ff;
+    /* the ramp inverts direction in dark: dimmest at level 1, brightest at 5 */
+    --c1: #454a66;
+    --c2: #6e5bd0;
+    --c3: #8a6df5;
+    --c4: #a184ff;
+    --c5: #c6b0ff;
+    --cat-violet: #9b7bff;  --cat-violet-soft: #261f49;
+    --cat-teal:   #2fd3cc;  --cat-teal-soft:   #0e332f;
+    --cat-rose:   #ff7ba8;  --cat-rose-soft:   #3a1424;
+    --cat-blue:   #67a8ff;  --cat-blue-soft:   #0f2340;
   }
 }
 
@@ -33,7 +106,7 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font: 16px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font: 400 16px/1.5 var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overscroll-behavior-y: none; /* khỏi pull-to-refresh giữa phiên ôn */
 }
 
@@ -46,7 +119,12 @@ html, body {
   max-width: 560px;
   width: 100%;
   margin: 0 auto;
-  padding: env(safe-area-inset-top) 16px calc(16px + env(safe-area-inset-bottom));
+  padding: env(safe-area-inset-top) 20px calc(20px + env(safe-area-inset-bottom));
+}
+/* Chừa chỗ cho tab bar cố định. Trang toàn màn hình (phiên ôn, đăng nhập) không
+   render tab bar nên `:has` tự bỏ khoảng này. */
+body:has(.tabbar) .app {
+  padding-bottom: calc(var(--tabbar) + env(safe-area-inset-bottom));
 }
 
 /* ------------------------------------------------------------- chung */
@@ -57,8 +135,8 @@ html, body {
 button {
   font: inherit;
   cursor: pointer;
-  border-radius: 10px;
-  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  border: 1px solid var(--line-strong);
   background: var(--card);
   color: var(--fg);
   min-height: var(--tap);
@@ -67,7 +145,7 @@ button {
 }
 button:active { transform: scale(0.97); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary { background: var(--action); border-color: var(--action); color: var(--on-action); font-weight: 600; }
 button.ghost { background: transparent; }
 button.icon { min-height: 40px; padding: 0 10px; }
 
@@ -81,7 +159,7 @@ button.icon { min-height: 40px; padding: 0 10px; }
 .deck {
   display: flex; align-items: center; gap: 12px;
   background: var(--card); border: 1px solid var(--line);
-  border-radius: var(--radius); padding: 14px; text-align: left;
+  border-radius: var(--r-lg); padding: 14px; text-align: left;
   min-height: 64px; width: 100%;
 }
 .deck-name { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -100,30 +178,34 @@ button.icon { min-height: 40px; padding: 0 10px; }
 
 /* ------------------------------------------------------------ study */
 .study { flex: 1; display: flex; flex-direction: column; gap: 14px; }
-.progress { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
-.progress > i { display: block; height: 100%; background: var(--accent); transition: width 0.25s ease; }
+.progress { height: 4px; background: var(--sunken); border-radius: 4px; overflow: hidden; }
+.progress > i { display: block; height: 100%; background: var(--action); transition: width 0.25s ease; }
 
 .face {
   flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center;
   gap: 10px; text-align: center; background: var(--card);
   border: 1px solid var(--line); border-radius: var(--radius);
-  padding: 26px 18px; min-height: 200px; cursor: pointer;
+  padding: 26px 20px; min-height: 240px; cursor: pointer; position: relative;
   /* Chọn chữ vô tình khi tap để reveal rất khó chịu trên mobile. */
   user-select: none; -webkit-user-select: none;
 }
-.term { font-size: 30px; font-weight: 650; letter-spacing: -0.02em; word-break: break-word; }
-.ipa { font-size: 15px; color: var(--muted); font-family: 'Charis SIL', Cambria, serif; }
+.term {
+  font-family: var(--font-serif), Cambria, Georgia, serif;
+  font-size: 32px; font-weight: 600; letter-spacing: -0.01em; word-break: break-word;
+}
+.ipa { font-size: 15px; color: var(--muted); font-family: var(--font-serif), Cambria, serif; }
 .pos {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 3px 8px;
+  font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
+  color: var(--accent); background: var(--accent-soft); border-radius: var(--r-sm); padding: 4px 9px;
 }
 .hr { width: 44px; height: 1px; background: var(--line); margin: 4px 0; }
 .back { font-size: 20px; font-weight: 550; }
 .back li { list-style: none; }
 .back ul { margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .ctx {
-  font-size: 13px; color: var(--muted); font-style: italic;
-  border-left: 2px solid var(--line); padding-left: 9px; text-align: left; max-width: 100%;
+  font-family: var(--font-serif), Cambria, serif;
+  font-size: 14px; line-height: 1.6; color: var(--muted); font-style: italic;
+  border-left: 2px solid var(--accent); padding-left: 12px; text-align: left; max-width: 100%;
 }
 .ctx mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: inherit; border-radius: 2px; }
 .tap-hint { font-size: 12px; color: var(--muted); }
@@ -136,18 +218,28 @@ button.icon { min-height: 40px; padding: 0 10px; }
 .face[data-mode='typeVi'], .face[data-mode='dictation'],
 .face[data-mode='typeEn'], .face[data-mode='cloze'] { user-select: text; -webkit-user-select: text; }
 
+/* Chip cách ôn: mỗi mode một sắc nhận diện, nhìn màu là biết đang bị hỏi kiểu gì
+   trước khi đọc chữ. Đặt absolute để nó không tham gia canh giữa của mặt thẻ. */
 .mode-badge {
-  position: absolute; align-self: flex-start; margin: -14px 0 0 -4px;
-  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--muted);
+  position: absolute; top: 14px; left: 14px;
+  font-size: 11px; font-weight: 500; letter-spacing: 0.01em;
+  border-radius: var(--r-sm); padding: 4px 9px;
+  color: var(--cat-violet); background: var(--cat-violet-soft);
 }
+.face[data-mode='typeVi'] .mode-badge { color: var(--cat-teal); background: var(--cat-teal-soft); }
+.face[data-mode='dictation'] .mode-badge { color: var(--cat-rose); background: var(--cat-rose-soft); }
+.face[data-mode='typeEn'] .mode-badge { color: var(--cat-blue); background: var(--cat-blue-soft); }
+.face[data-mode='cloze'] .mode-badge { color: var(--due); background: var(--due-soft); }
+.face[data-mode='choice'] .mode-badge { color: var(--good); background: var(--sunken); }
 .face { position: relative; }
 
 /* nghe rồi gõ */
 .listen { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+/* Mode nghe-rồi-gõ mang sắc hồng, khớp với chip cách ôn ở góc mặt thẻ. */
 .listen-btn {
-  width: 88px; height: 88px; border-radius: 50%; font-size: 34px;
-  background: var(--accent-soft); border: 1px solid var(--line); color: var(--accent);
+  width: 88px; height: 88px; border-radius: 50%;
+  display: grid; place-items: center; padding: 0;
+  background: var(--cat-rose-soft); border: 0; color: var(--cat-rose);
 }
 .listen-btn:active { transform: scale(0.94); }
 
@@ -294,17 +386,19 @@ li.lsense[aria-selected='true'] {
   background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent);
 }
 li.lsense[aria-selected='true']::before { content: "✓"; color: var(--accent); font-weight: 700; }
-.lgloss { display: block; font-size: 15px; }
-.lex { display: block; font-size: 12px; color: var(--muted); font-style: italic; margin-top: 2px; }
+.lgloss { display: block; font-size: 15px; font-weight: 500; }
+.lex {
+  display: block; font-size: 12.5px; margin-top: 2px;
+  font-family: var(--font-serif), Cambria, serif; font-style: italic; color: var(--muted-2);
+}
 .lrev { display: block; font-size: 11.5px; color: var(--muted); margin-top: 3px; }
 .lrev b { font-weight: 600; }
 .pos[data-pos='primary'] { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
 
 /* --------------------------------------------------------- bậc độ nhớ */
-/* Màu theo bậc: dùng chung cho vạch, thanh phân bố và ô thống kê. */
-.lvl-bars i[data-on='1'], .lvlbar i, .lvlrow b {
-  --c1: var(--muted); --c2: #d9822b; --c3: #3a7bd5; --c4: var(--good); --c5: var(--accent);
-}
+/* Màu theo bậc dùng --c1..--c5 khai ở :root — một thang tuần tự. KHÔNG khai lại
+   ở đây: bản cũ ghi đè bằng năm sắc rời (xám/cam/xanh dương/lục/tím) cho một
+   thang có thứ tự, nên mắt đọc ra năm phạm trù thay vì một tiến trình. */
 .lvl { display: inline-flex; align-items: center; gap: 7px; }
 .lvl-bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
 .lvl-bars i {
@@ -386,13 +480,13 @@ li.lsense[aria-selected='true']::before { content: "✓"; color: var(--accent); 
 a.btn, .btn {
   display: flex; align-items: center; justify-content: center;
   text-decoration: none; font: inherit; cursor: pointer;
-  border-radius: 10px; border: 1px solid var(--line);
+  border-radius: var(--r-md); border: 1px solid var(--line-strong);
   background: var(--card); color: var(--fg);
   min-height: var(--tap); padding: 0 14px;
   transition: transform .08s ease, background .12s ease;
 }
 .btn:active { transform: scale(0.97); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.primary { background: var(--action); border-color: var(--action); color: var(--on-action); font-weight: 600; }
 .btn.big { min-height: 60px; font-size: 17px; }
 .btn.disabled { opacity: .45; pointer-events: none; }
 a.deck { text-decoration: none; color: inherit; }
@@ -434,3 +528,165 @@ code.copyable { color: var(--accent); font-weight: 600; }
 }
 li.lsense[data-saved='1'] { background: color-mix(in srgb, var(--good) 7%, transparent); }
 li.lsense[data-saved='1'] .lgloss { opacity: 0.85; }
+
+
+/* ======================================================== tab bar đáy */
+.tabbar {
+  position: fixed; inset: auto 0 0 0; z-index: 20;
+  display: flex; align-items: stretch;
+  max-width: 560px; margin: 0 auto;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  padding: 8px 0 calc(10px + env(safe-area-inset-bottom));
+}
+.tab {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  text-decoration: none; color: var(--muted-2);
+  padding: 0; min-height: var(--tap);
+}
+.tab-pill {
+  display: grid; place-items: center;
+  width: 52px; height: 30px; border-radius: 999px;
+  transition: background 0.14s ease, transform 0.08s ease;
+}
+.tab-label { font-size: 11px; font-weight: 500; letter-spacing: 0.01em; }
+/* Icon giữ NGUYÊN màu nhận diện kể cả khi tab tắt — chỉ nhãn và viên nền đổi.
+   Rút màu ba tab kia để làm nổi tab đang chọn thì bar lại thành xám. */
+.tab[data-hue='violet'] .tab-pill { color: var(--cat-violet); }
+.tab[data-hue='teal'] .tab-pill { color: var(--cat-teal); }
+.tab[data-hue='rose'] .tab-pill { color: var(--cat-rose); }
+.tab[data-hue='blue'] .tab-pill { color: var(--cat-blue); }
+.tab[data-on='1'] { color: var(--fg); }
+.tab[data-on='1'] .tab-label { font-weight: 600; }
+.tab[data-on='1'][data-hue='violet'] .tab-pill { background: var(--cat-violet-soft); }
+.tab[data-on='1'][data-hue='teal'] .tab-pill { background: var(--cat-teal-soft); }
+.tab[data-on='1'][data-hue='rose'] .tab-pill { background: var(--cat-rose-soft); }
+.tab[data-on='1'][data-hue='blue'] .tab-pill { background: var(--cat-blue-soft); }
+.tab:active .tab-pill { transform: scale(0.92); }
+
+/* ===================================================== nút icon tròn */
+.iconbtn {
+  display: grid; place-items: center; flex: none;
+  width: 40px; height: 40px; min-height: 40px; padding: 0;
+  border: 0; background: none; color: var(--muted);
+  border-radius: var(--r-md); text-decoration: none;
+}
+.iconbtn:active { transform: scale(0.92); }
+
+/* ============================================ hero "hôm nay" trang chính */
+/* Toàn bộ độ mạnh của màn hình dồn vào đúng một khối bão hoà; phần dưới để yên. */
+.hero {
+  background: var(--action); color: var(--on-action);
+  border-radius: var(--r-xl); padding: 20px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.hero-label { font-size: 11px; font-weight: 500; opacity: 0.75; }
+.hero-fig { display: flex; align-items: baseline; gap: 8px; margin-top: 2px; }
+.hero-fig b { font-size: 30px; font-weight: 600; letter-spacing: -0.02em; }
+.hero-fig span { font-size: 15px; opacity: 0.8; }
+.hero-meters { display: flex; gap: 20px; }
+.meter { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.meter-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.meter-head b { font-weight: 400; opacity: 0.85; }
+.meter-head span { margin-left: auto; opacity: 0.65; font-variant-numeric: tabular-nums; }
+/* Độ mờ đặt trên MÀU, không trên phần tử: đặt trên phần tử thì nó đổ xuống cả
+   vạch bên trong, làm vạch cùng tông với nền rồi biến mất. Đã mắc đúng lỗi này. */
+.meter-track {
+  height: 4px; border-radius: 2px; overflow: hidden;
+  background: rgb(255 255 255 / 0.32);
+}
+.meter-track > i { display: block; height: 100%; background: #fff; border-radius: 2px; }
+.hero .btn { background: var(--card); border-color: transparent; color: var(--action); font-weight: 600; }
+
+/* ================================================ thẻ deck (bản mới) */
+.deckrow {
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 14px 16px 14px 14px;
+  text-decoration: none; color: inherit;
+}
+.deckrow:active { transform: scale(0.995); }
+.deckrow-top { display: flex; align-items: center; gap: 12px; }
+/* Mỗi bộ thẻ một sắc, để danh sách đọc ra màu chứ không phải hàng xám. */
+.deck-tile {
+  flex: none; display: grid; place-items: center;
+  width: 42px; height: 42px; border-radius: 13px;
+  font-size: 18px; font-weight: 600;
+}
+.deckrow:nth-of-type(4n + 1) .deck-tile { color: var(--cat-violet); background: var(--cat-violet-soft); }
+.deckrow:nth-of-type(4n + 2) .deck-tile { color: var(--cat-teal); background: var(--cat-teal-soft); }
+.deckrow:nth-of-type(4n + 3) .deck-tile { color: var(--cat-blue); background: var(--cat-blue-soft); }
+.deckrow:nth-of-type(4n + 4) .deck-tile { color: var(--cat-rose); background: var(--cat-rose-soft); }
+.deck-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.deck-main > b {
+  font-size: 17px; font-weight: 500; letter-spacing: -0.01em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Số đếm mang luôn danh từ nên không cần chú giải, và số 0 lặng đi ở màu nhạt
+   thay vì hét lên trong một viên pill. */
+.deck-counts { display: flex; gap: 12px; font-size: 13px; }
+.deck-counts .n-due { color: var(--due); }
+.deck-counts .n-new { color: var(--accent); }
+.deck-counts .n-zero, .deck-counts .n-susp { color: var(--muted-2); }
+
+/* ============================================= trạng thái trống & tải */
+.emptybox {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  text-align: center; padding: 32px 24px 28px;
+  background: var(--card); border: 1px dashed var(--line-strong);
+  border-radius: var(--r-xl);
+}
+.emptybox h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.emptybox p { margin: 0; font-size: 15px; color: var(--muted); }
+.emptybox .stack { width: 100%; }
+/* Vẽ đúng thứ đang được nói tới: năm bậc rỗng. */
+.ramp-empty { display: flex; gap: 3px; width: 150px; }
+.ramp-empty i { flex: 1; height: 8px; border-radius: 4px; background: var(--sunken); }
+
+/* Thanh bậc nhớ đầy màu làm hình thưởng khi xong phiên — cùng ngôn ngữ hình với
+   thẻ deck và trang Thống kê, nên không cần mượn emoji. */
+.ramp-full { display: flex; gap: 3px; width: 200px; margin: 0 auto 4px; }
+.ramp-full i { flex: 1; height: 10px; border-radius: 5px; }
+.ramp-full i:nth-child(1) { background: var(--c1); }
+.ramp-full i:nth-child(2) { background: var(--c2); }
+.ramp-full i:nth-child(3) { background: var(--c3); }
+.ramp-full i:nth-child(4) { background: var(--c4); }
+.ramp-full i:nth-child(5) { background: var(--c5); }
+.done .ramp-empty { margin: 0 auto 4px; }
+/* .big giờ chứa số hoặc thanh, không còn emoji — cần cỡ và font số phù hợp */
+.done .big { font-size: 34px; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.speakbtn { display: grid; place-items: center; }
+
+.skel { background: var(--sunken); border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .skel { animation: skel 1.4s ease-in-out infinite; }
+  @keyframes skel { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+}
+
+/* =================================== hàng bậc độ nhớ ở trang Thống kê */
+/* Chú giải tự mã hoá thứ tự: thanh dài dần VÀ màu đậm dần. */
+.lvlrow .gauge { flex: none; width: 48px; height: 6px; }
+.lvlrow .gauge > i { display: block; height: 100%; border-radius: 3px; }
+.lvlrow[data-level='1'] .gauge > i { width: 16px; background: var(--c1); }
+.lvlrow[data-level='2'] .gauge > i { width: 24px; background: var(--c2); }
+.lvlrow[data-level='3'] .gauge > i { width: 32px; background: var(--c3); }
+.lvlrow[data-level='4'] .gauge > i { width: 40px; background: var(--c4); }
+.lvlrow[data-level='5'] .gauge > i { width: 48px; background: var(--c5); }
+
+/* Số ở ô thống kê mang màu CHỈ khi màu có nghĩa. */
+.stat b[data-tone='due'] { color: var(--due); }
+.stat b[data-tone='good'] { color: var(--good); }
+.stat b[data-tone='bad'] { color: var(--again); }
+
+/* ==================================== hàng danh sách có ô icon màu */
+.navrow {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 12px 14px; min-height: 64px;
+  text-decoration: none; color: inherit; font-size: 17px; font-weight: 500;
+}
+.navrow .tile { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 12px; }
+.navrow .tile[data-hue='violet'] { color: var(--cat-violet); background: var(--cat-violet-soft); }
+.navrow .tile[data-hue='teal'] { color: var(--cat-teal); background: var(--cat-teal-soft); }
+.navrow .meta { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--muted-2); }
+.navrow .chev { color: var(--muted-2); flex: none; }
