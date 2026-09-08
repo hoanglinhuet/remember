@@ -77,10 +77,19 @@ async function readCards() {
   return Array.isArray(bag[STORE_KEY]) ? bag[STORE_KEY] : [];
 }
 
-async function updateBadge(count) {
-  const n = count ?? (await readCards()).length;
-  await chrome.action.setBadgeText({ text: n ? String(Math.min(n, 9999)) : '' });
-  await chrome.action.setBadgeBackgroundColor({ color: '#6d4aff' });
+/**
+ * Xoá badge trên icon extension.
+ *
+ * Trước đây badge hiện TỔNG số thẻ đã lưu — một con số chỉ tăng, không bao giờ là
+ * việc cần làm, nên nó không nói gì ngoài "bạn đã dùng app này bao nhiêu lần". Badge
+ * là chỗ cho số việc TỒN (thẻ đến hạn, thẻ chưa đồng bộ); không có số như thế thì
+ * để trống.
+ *
+ * Vẫn phải gọi hàm này lúc cài/khởi động: badge do bản cũ đặt còn sống trong phiên
+ * browser hiện tại, không tự mất khi cập nhật extension.
+ */
+async function clearBadge() {
+  await chrome.action.setBadgeText({ text: '' });
 }
 
 async function saveCard(payload) {
@@ -103,7 +112,6 @@ async function saveCard(payload) {
     existing.seenCount = (existing.seenCount || 1) + 1;
     existing.updatedAt = new Date().toISOString();
     await chrome.storage.local.set({ [STORE_KEY]: cards });
-    await updateBadge(cards.length);
     // Dedupe theo front + ngôn ngữ trên TOÀN BỘ thẻ (FR-B3), không theo từng deck
     // -> nói rõ thẻ cũ đang ở deck nào để người dùng không tưởng là lưu thất bại.
     const deckName = decks.find((d) => d.id === existing.deckId)?.name || '';
@@ -134,7 +142,6 @@ async function saveCard(payload) {
   });
 
   await chrome.storage.local.set({ [STORE_KEY]: cards });
-  await updateBadge(cards.length);
 
   const card = cards[cards.length - 1];
   // Local trước (đã xong ở trên), rồi mới đẩy lên — bắt từ không được thất bại
@@ -375,7 +382,6 @@ const handlers = {
   DELETE_CARD: async (msg) => {
     const cards = (await readCards()).filter((c) => c.id !== msg.payload?.id);
     await chrome.storage.local.set({ [STORE_KEY]: cards });
-    await updateBadge(cards.length);
     return { ok: true, total: cards.length };
   },
 };
@@ -407,12 +413,12 @@ function registerMenu() {
 
 chrome.runtime.onInstalled.addListener(() => {
   registerMenu();
-  updateBadge();
+  clearBadge();
   ensureDecks();
 });
 chrome.runtime.onStartup.addListener(() => {
   registerMenu();
-  updateBadge();
+  clearBadge();
   // Mở browser lại: có thể đã đăng nhập web từ lần trước, thử đẩy hàng chờ.
   flushOutbox(readCards, markSynced).catch(() => {});
 });

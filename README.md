@@ -20,8 +20,8 @@ Dùng Supabase làm database: đọc [`infra/SUPABASE.md`](infra/SUPABASE.md). S
 một Postgres được host — **không** cần `SUPABASE_URL`/`ANON_KEY`, và `005_supabase_lockdown.sql`
 là **bắt buộc** (nếu không, anon key công khai đọc được `sessions` và `users`).
 
-**Đã làm được:** quản lý bộ thẻ và thẻ trên web (thêm · đổi tên · xoá bộ thẻ; thêm · sửa · xoá
-từng thẻ, tìm trong bộ, chuyển thẻ sang bộ khác) · bắt từ bằng cách bôi đen (icon nổi, panel có IPA + loại từ tiếng Việt + dịch ngược
+**Đã làm được:** quản lý trên web: bộ thẻ **thêm · đổi tên · xoá** (xoá bộ thì chọn dồn thẻ
+sang bộ khác hay xoá luôn), thẻ trong bộ **xem · tìm · xoá** · bắt từ bằng cách bôi đen (icon nổi, panel có IPA + loại từ tiếng Việt + dịch ngược
 + giọng nữ Google) · deck và danh sách thẻ **lấy qua API** · dedupe theo *từ + loại từ + nghĩa Việt*,
 hiện "đã lưu" ngay lúc tra · đăng nhập Google **tự làm** (PKCE + session token riêng, không qua
 Supabase Auth) · extension kết nối tài khoản bằng **mã ghép nối** · phiên ôn FSRS **theo đúng cơ chế

@@ -193,7 +193,7 @@ remember/
 | Thành phần | Trách nhiệm | Không được làm |
 |---|---|---|
 | **Content script** (`document_idle`, inject theo `optional_host_permissions`) | phát hiện selection, dựng bubble trong Shadow DOM, vẽ highlight, chạy mini-session, trích context sentence | fetch mạng, chứa business logic, giữ state lâu dài |
-| **Service worker** | router message, gọi provider, cache dịch, đếm quota, chạy `chrome.alarms` (sync, nhắc nhở, cập nhật badge), ghi IndexedDB | giữ state trong biến toàn cục (SW bị kill ~30s idle) |
+| **Service worker** | router message, gọi provider, cache dịch, đếm quota, chạy `chrome.alarms` (sync, nhắc nhở), ghi IndexedDB | giữ state trong biến toàn cục (SW bị kill ~30s idle) |
 | **Popup** | tra nhanh, tóm tắt số thẻ due, vào phiên học | công việc dài (dễ bị đóng giữa chừng) |
 | **Study tab / side panel** | phiên ôn tập đầy đủ, deck browser, stats, settings | — |
 | **Offscreen document** [S] | phát audio dài cho Playback mode (SW không phát được audio) | — |
@@ -237,7 +237,7 @@ sequenceDiagram
   CS->>SW: SAVE_CARD {front, back[], context, sourceUrl}
   SW->>DB: dedupe → upsert card + card_state(new) + outbox
   SW-->>CS: toast "Đã lưu vào EN→VI"
-  SW->>SW: cập nhật badge · đặt alarm sync (debounce 5s)
+  SW->>SW: đặt alarm sync (debounce 5s)
 ```
 
 ### 4.4 Highlight in-page — thiết kế hiệu năng

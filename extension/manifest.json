@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Remember",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "Hiện icon khi bôi đen text trên trang web, mở panel tra từ và lưu flashcard.",
   "icons": {
     "16": "icons/icon16.png",
