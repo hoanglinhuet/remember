@@ -593,6 +593,15 @@ function makeQueries(userId: string): StudyQueries {
       }));
     },
 
+    async savedFronts(): Promise<string[]> {
+      // DISTINCT ở DB, không phải lọc ở JS: `book` (danh từ) và `book` (động từ) là
+      // hai thẻ nhưng một từ, và bên nhận chỉ cần biết từ.
+      const rows = await read((tx) => tx`
+        select distinct normalized_front from cards
+        where user_id = ${userId} and deleted_at is null and normalized_front <> ''`);
+      return rows.map((r) => r.normalized_front as string);
+    },
+
     async deck(deckId: string): Promise<Deck | null> {
       const rows = await read((tx) => tx`
         select id, name, parent_id, sort_order, updated_at from decks

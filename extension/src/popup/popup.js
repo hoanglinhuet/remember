@@ -147,7 +147,50 @@ async function load() {
   }
 }
 
+/**
+ * Công tắc highlight.
+ *
+ * Phải có chỗ TẮT: highlight vẽ lên mọi trang, và có lúc người ta chỉ muốn đọc.
+ * Trạng thái đọc trực tiếp từ storage (mặc định BẬT) chứ không hỏi service worker —
+ * ô tick không được nhảy sau khi popup đã hiện.
+ */
+async function setUpHighlightToggle() {
+  const box = document.querySelector('[data-role="hl"]');
+  const note = document.querySelector('[data-role="hl-note"]');
+  if (!box) return;
+
+  const bag = await chrome.storage.local.get(['highlightOn', 'highlightIndex']);
+  box.checked = bag.highlightOn !== false;
+
+  const describe = () => {
+    const n = bag.highlightIndex?.fronts?.length ?? 0;
+    note.textContent = box.checked
+      ? (n ? `Đang tô ${n} từ đã lưu trên trang đang đọc.` : 'Tô các từ đã có thẻ ngay trên trang đang đọc.')
+      : 'Đang tắt — trang không được tô gì.';
+  };
+  describe();
+
+  box.addEventListener('change', async () => {
+    box.disabled = true;
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'SET_HIGHLIGHT_ON',
+        payload: { on: box.checked },
+      });
+      Object.assign(bag, await chrome.storage.local.get('highlightIndex'));
+      describe();
+    } catch {
+      // Service worker không trả lời: trả ô tick về trạng thái thật, đừng để UI nói dối.
+      box.checked = !box.checked;
+      note.textContent = 'Không đổi được — thử tải lại extension.';
+    } finally {
+      box.disabled = false;
+    }
+  });
+}
+
 // account.js gọi lại sau khi kết nối / ngắt kết nối để danh sách đổi nguồn ngay.
 window.reloadCards = load;
 
 load();
+setUpHighlightToggle();

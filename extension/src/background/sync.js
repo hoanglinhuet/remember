@@ -20,6 +20,7 @@ const BASE_KEY = 'apiBase';
 const TOKEN_KEY = 'apiToken';
 const USER_KEY = 'apiUser';
 const DECKS_KEY = 'deckCache';
+const FRONTS_KEY = 'frontsCache';
 const OUTBOX_KEY = 'outbox';
 const FLUSH_ALARM = 'remember-flush';
 
@@ -196,6 +197,43 @@ export async function getExisting(front, langFrom, langTo) {
   const res = await call(`/cards/existing?${qs.toString()}`);
   if (!res.ok) return { ok: false, reason: res.reason, cards: [] };
   return { ok: true, cards: res.body?.cards ?? [] };
+}
+
+/**
+ * MỌI từ đã lưu (dạng chuẩn hoá) — cho highlight trên trang.
+ *
+ * Cache theo TTL vì highlight chạy ở MỌI tab và mỗi lần điều hướng: gọi API mỗi
+ * trang thì vừa chậm vừa vô nghĩa (bộ từ không đổi giữa hai lần cuộn trang).
+ *
+ * `connected` là thông tin mà bên gọi KHÔNG suy ra được từ `fronts`: danh sách rỗng
+ * có thể là "chưa ghép nối tài khoản" hoặc là "tài khoản này thật sự chưa có thẻ
+ * nào". Hai trường hợp đó phải xử lý khác nhau, nên trả cờ riêng thay vì để bên gọi
+ * đoán.
+ */
+export async function getRemoteFronts({ maxAgeMs = 10 * 60_000 } = {}) {
+  if (!(await getToken())) return { connected: false, fronts: [], stale: true, reason: 'no_token' };
+
+  const bag = await chrome.storage.local.get(FRONTS_KEY);
+  const cached = bag[FRONTS_KEY];
+  if (cached && Date.now() - cached.at < maxAgeMs) {
+    return { connected: true, fronts: cached.fronts, stale: false };
+  }
+
+  const res = await call('/cards/fronts');
+  if (!res.ok) {
+    // Mạng hỏng: trả cache cũ kèm `stale`. Token bị thu hồi (`unauthorized`) thì
+    // `call()` đã xoá token ⇒ coi như chưa kết nối.
+    return {
+      connected: res.reason !== 'no_token' && res.reason !== 'unauthorized',
+      fronts: cached?.fronts ?? [],
+      stale: true,
+      reason: res.reason,
+    };
+  }
+
+  const fronts = (res.body?.fronts ?? []).map(String).filter(Boolean);
+  await chrome.storage.local.set({ [FRONTS_KEY]: { fronts, at: Date.now() } });
+  return { connected: true, fronts, stale: false };
 }
 
 /** Danh sách thẻ gần nhất cho popup — lấy từ API. */

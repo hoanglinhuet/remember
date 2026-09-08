@@ -11,11 +11,10 @@
   if (window.__rememberInjected) return;
   window.__rememberInjected = true;
 
-  // Dấu hiệu để biết bản nào đang thực sự chạy trong tab (F12 -> Console).
-  // Không thấy dòng này = content script cũ, cần Reload extension + F5 tab.
-  try {
-    console.info('[Remember] content script v%s', chrome.runtime.getManifest().version);
-  } catch { /* context mất hiệu lực sau khi reload extension */ }
+  // Trước đây có một dòng console.info in phiên bản, để biết tab đang chạy bản nào.
+  // Đã bỏ: content script chạy trên MỌI trang, nên nó là rác trong console của người
+  // dùng. Cách kiểm bản đang chạy mà không cần log: chrome://extensions hiện version,
+  // và Service Worker → Inspect cho biết bản nào vừa được nạp.
 
   const MAX_CARD_LEN = 200; // FR-A1: dài hơn thì chỉ tra, không cho làm thẻ
   const ICON_SIZE = 28;

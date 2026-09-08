@@ -435,6 +435,10 @@ function makeQueries(userId: string): StudyQueries {
         }));
     },
 
+    async savedFronts(): Promise<string[]> {
+      return [...new Set(mineCards().map((c) => c.normalizedFront).filter(Boolean))];
+    },
+
     async deck(deckId: string): Promise<Deck | null> {
       const d = s.decks.get(deckId);
       if (!d || d.userId !== userId || d.deletedAt) return null;

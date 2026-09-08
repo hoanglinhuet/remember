@@ -44,6 +44,14 @@
     .export:disabled { opacity: .7; cursor: default; }
     .empty { color: var(--muted); font-size: 12px; padding: 14px 0; text-align: center; }
 
+    /* --- công tắc highlight --- */
+    .toggle { display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
+              border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px;
+              margin-bottom: 10px; background: var(--soft); }
+    .toggle input { margin: 2px 0 0; accent-color: var(--accent); flex: none; }
+    .toggle b { font-size: 12px; font-weight: 600; display: block; }
+    .toggle small { font-size: 11px; color: var(--muted); }
+
     /* --- tài khoản --- */
     .account { border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px;
                margin-bottom: 10px; background: var(--soft); }
@@ -76,6 +84,13 @@
   </header>
   <p class="hint">Bôi đen text trên trang → icon tím hiện ra → click để lưu thẻ.</p>
   <div class="account" data-role="account"></div>
+  <label class="toggle">
+    <input type="checkbox" data-role="hl" checked />
+    <span>
+      <b>Highlight từ đã lưu</b>
+      <small data-role="hl-note">Tô các từ đã có thẻ ngay trên trang đang đọc.</small>
+    </span>
+  </label>
   <button class="export" data-role="export">⇄ Xuất dữ liệu ra file</button>
   <ul data-role="list"></ul>
   <script src="account.js"></script>

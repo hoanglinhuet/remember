@@ -34,6 +34,7 @@ Sau mỗi lần sửa code: bấm **Reload** ở trang extensions, rồi **F5 l�
 | FR-B1 — lưu thẻ (front, context, sourceUrl/title, timestamps) | ✅ (lưu tạm `chrome.storage.local`) |
 | FR-B3 — chống trùng theo `normalizedFront + langFrom` (gặp lại thì `×N`) | ✅ |
 | Menu chuột phải "Remember: lưu …", popup 50 thẻ gần nhất, xoá thẻ | ✅ |
+| **Highlight từ đã lưu ngay trên trang** (CSS Custom Highlight API — không sửa DOM của trang), tắt được trong popup | ✅ |
 | Đóng bằng `Esc` / click ra ngoài; giới hạn 200 ký tự thì chặn lưu (chỉ tra) | ✅ |
 | Hiệu ứng: fade + scale có fade-out thật, `transform-origin` theo hướng lật, nội dung panel trôi vào chậm hơn khung 60ms, tôn trọng `prefers-reduced-motion` | ✅ |
 | Dịch cụm/câu chất lượng cao, Wiktionary cho ngôn ngữ ≠ tiếng Anh | ❌ M1 |
@@ -48,7 +49,8 @@ extension/
 └── src/
     ├── content/selection-icon.js       # phát hiện selection + icon + panel (Shadow DOM)
     ├── background/providers.js         # chuỗi provider từ điển/MT, chuẩn hoá về 1 schema
-    ├── background/service-worker.js    # message hub, lookup + cache + quota, lưu thẻ
+    ├── content/highlight.js            # tô từ đã lưu trên trang (CSS.highlights, không sửa DOM)
+    ├── background/service-worker.js    # message hub, lookup + cache + quota, lưu thẻ, bộ từ highlight
     └── popup/popup.html|.js            # danh sách thẻ gần nhất
 ```
 

@@ -186,6 +186,7 @@ buộc phải vượt RLS (xoá tài khoản, job dọn).
 | **`POST /v1/cards`** | **extension khi lưu từ** · web khi tra hoặc gõ tay | tạo/upsert thẻ theo `id` do client sinh ⇒ **idempotent**; dedupe ở server, trùng thì trả `409` kèm deck đang chứa |
 | `PATCH /v1/cards/{id}` | web | sửa thẻ. Chỉ field CÓ MẶT trong body bị ghi (`null` = xoá giá trị); đổi `front`/`pos`/`back` là đổi khoá dedupe nên có thể trả `409` |
 | `DELETE /v1/cards/{id}` | web | xoá **mềm**: giữ `card_states` + `review_logs`, và không chặn việc lưu lại đúng từ đó về sau |
+| `GET  /v1/cards/fronts` | **extension highlight** | mọi từ đã lưu, dạng chuẩn hoá, không trùng — một cột duy nhất. Cả bộ (không phân trang) vì extension cache theo TTL 10 phút; `/cards/list` không thay được: nó chỉ 50 thẻ gần nhất và kéo về cả nghĩa/IPA/deck |
 | `POST /v1/cards/batch` | extension flush outbox | tối đa 200 thẻ/lần |
 | `GET  /v1/study/queue?deck=&limit=` | web | hàng đợi phiên: `cards ⨝ card_states`, đã áp day cutoff + hạn mức ngày |
 | **`POST /v1/study/answer`** | web | nhận `{cardId, rating, answeredAt}` → **server tính FSRS** (ADR-26) → ghi `card_states` + `review_logs` trong một transaction |

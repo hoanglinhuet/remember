@@ -31,6 +31,15 @@ export interface StudyQueries {
    */
   cardsByFront(front: string, langFrom: string, langTo: string): Promise<ExistingCard[]>;
 
+  /**
+   * Dạng chuẩn hoá của MỌI từ đã lưu, không trùng lặp.
+   *
+   * Cho tính năng highlight của extension: nó cần biết "từ này đã có thẻ chưa" cho
+   * từng từ trên trang, nên phải là cả bộ, và chỉ cần `normalized_front` — không
+   * kéo về nghĩa, IPA, tiến độ. Một bộ vài nghìn từ chỉ vài chục KB.
+   */
+  savedFronts(): Promise<string[]>;
+
   /** Một deck theo id — để trang quản lý biết mình đang mở deck nào (hoặc 404). */
   deck(deckId: string): Promise<Deck | null>;
 

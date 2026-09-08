@@ -9,7 +9,8 @@
 import { runChain } from './providers.js';
 import {
   FLUSH_ALARM, connectWithCode, createDeck, disconnect, flushOutbox, getDecks,
-  getExisting, getRecentCards, getStatus, refreshDecks, setApiBase, syncAfterSave,
+  getExisting, getRecentCards, getRemoteFronts, getStatus, refreshDecks, setApiBase,
+  syncAfterSave,
 } from './sync.js';
 
 const STORE_KEY = 'cards';
@@ -17,6 +18,9 @@ const DECKS_KEY = 'decks';
 const CACHE_KEY = 'lookupCache';
 const QUOTA_KEY = 'quota';
 const MENU_ID = 'remember-lookup';
+const HL_KEY = 'highlightIndex';   // { fronts, at } — bộ từ để highlight trên trang
+const HL_ON_KEY = 'highlightOn';   // bật/tắt highlight, mặc định BẬT
+const HL_TTL_MS = 10 * 60_000;
 const CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 ngày (ARCHITECTURE §7)
 const CACHE_MAX = 400;                          // giữ storage.local khỏi phình
 const DAILY_BUDGET = 800;                       // mỗi provider/ngày, tự đặt dưới hạn mức free
@@ -92,6 +96,55 @@ async function clearBadge() {
   await chrome.action.setBadgeText({ text: '' });
 }
 
+// ------------------------------------------------------- highlight trên trang
+
+/**
+ * Bộ từ để content script highlight.
+ *
+ * ĐÃ KẾT NỐI TÀI KHOẢN ⇒ API LÀ NGUỒN SỰ THẬT DUY NHẤT, không lấy hợp với local.
+ * Bản đầu tiên gộp cả hai và sai rõ ràng: `chrome.storage.local` giữ MỌI thẻ từng
+ * lưu từ browser này, còn xoá thẻ trên web thì không xoá được bản local đó — nên
+ * người dùng có 2 thẻ mà cả chục từ cũ đã xoá vẫn sáng lên. Local ở đây là cache,
+ * và cache không được quyền phủ quyết nguồn sự thật.
+ *
+ * Ngoại lệ duy nhất: thẻ local CHƯA đẩy lên được (`!c.synced` — lưu lúc mất mạng).
+ * Chúng đã lưu thật theo góc nhìn người dùng, chỉ chưa kịp lên server.
+ *
+ * Chưa ghép nối tài khoản thì local là kho duy nhất, dùng cả bộ.
+ *
+ * Kết quả ghi vào storage thay vì trả riêng cho từng tab: một trang có thể có nhiều
+ * frame, và content script đọc storage trực tiếp được, không phải đánh thức service
+ * worker cho từng frame một.
+ */
+async function buildHighlightIndex() {
+  const cards = await readCards();
+  const frontOf = (c) => c.normalizedFront || normalize(c.front || '');
+  const remote = await getRemoteFronts({ maxAgeMs: HL_TTL_MS });
+
+  // `stale` mà vẫn có cache: mạng hỏng, dùng bản cache — vẫn đúng hơn local.
+  const authoritative = remote.connected && (!remote.stale || remote.fronts.length > 0);
+  const fronts = authoritative
+    ? [...remote.fronts, ...cards.filter((c) => !c.synced).map(frontOf)]
+    : cards.map(frontOf);
+
+  const index = { fronts: [...new Set(fronts.filter(Boolean))], at: Date.now(), source: authoritative ? 'api' : 'local' };
+  await chrome.storage.local.set({ [HL_KEY]: index });
+  return index;
+}
+
+/** Bộ từ cho content script; chỉ gọi API lại khi cache đã cũ. */
+async function highlightIndex({ force = false } = {}) {
+  const bag = await chrome.storage.local.get([HL_KEY, HL_ON_KEY]);
+  const on = bag[HL_ON_KEY] !== false;   // mặc định bật
+  const cached = bag[HL_KEY];
+  if (!on) return { ok: true, on, fronts: [] };
+  if (!force && cached && Date.now() - cached.at < HL_TTL_MS) {
+    return { ok: true, on, fronts: cached.fronts };
+  }
+  const index = await buildHighlightIndex();
+  return { ok: true, on, fronts: index.fronts };
+}
+
 async function saveCard(payload) {
   const front = String(payload?.front ?? '').trim();
   if (!front) return { ok: false, error: 'thiếu nội dung' };
@@ -142,6 +195,8 @@ async function saveCard(payload) {
   });
 
   await chrome.storage.local.set({ [STORE_KEY]: cards });
+  // Từ vừa lưu phải được highlight ngay trên trang đang đọc, không phải chờ hết TTL.
+  await buildHighlightIndex();
 
   const card = cards[cards.length - 1];
   // Local trước (đã xong ở trên), rồi mới đẩy lên — bắt từ không được thất bại
@@ -366,6 +421,15 @@ const handlers = {
     }
     return { ok: false, error: remote.error || 'không tạo được deck' };
   },
+  /** Content script hỏi bộ từ để highlight. */
+  GET_HIGHLIGHT: (msg) => highlightIndex({ force: Boolean(msg.payload?.force) }),
+  /** Popup bật/tắt highlight. Tắt thì xoá luôn bộ từ đang cache cho gọn. */
+  SET_HIGHLIGHT_ON: async (msg) => {
+    const on = Boolean(msg.payload?.on);
+    await chrome.storage.local.set({ [HL_ON_KEY]: on });
+    if (on) await buildHighlightIndex();
+    return { ok: true, on };
+  },
   SPEAK: (msg) => speak(msg.payload),
   STOP_SPEAK: async () => {
     try {
@@ -382,6 +446,7 @@ const handlers = {
   DELETE_CARD: async (msg) => {
     const cards = (await readCards()).filter((c) => c.id !== msg.payload?.id);
     await chrome.storage.local.set({ [STORE_KEY]: cards });
+    await buildHighlightIndex();
     return { ok: true, total: cards.length };
   },
 };
@@ -415,10 +480,15 @@ chrome.runtime.onInstalled.addListener(() => {
   registerMenu();
   clearBadge();
   ensureDecks();
+  // Dựng lại bộ từ highlight NGAY, không chờ hết TTL: bản cũ trong storage có thể
+  // được dựng bằng phiên bản trước (và bằng luật khác), nên sau khi cập nhật
+  // extension nó vẫn còn tô những từ đã xoá.
+  buildHighlightIndex().catch(() => {});
 });
 chrome.runtime.onStartup.addListener(() => {
   registerMenu();
   clearBadge();
+  buildHighlightIndex().catch(() => {});
   // Mở browser lại: có thể đã đăng nhập web từ lần trước, thử đẩy hàng chờ.
   flushOutbox(readCards, markSynced).catch(() => {});
 });
