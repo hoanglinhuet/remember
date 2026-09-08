@@ -28,6 +28,7 @@ export const POST = route(async (req, { user, db }) => {
       contextSentence: typeof body.contextSentence === 'string' ? body.contextSentence : null,
       sourceUrl: typeof body.sourceUrl === 'string' ? body.sourceUrl : null,
       sourceTitle: typeof body.sourceTitle === 'string' ? body.sourceTitle : null,
+      note: typeof body.note === 'string' && body.note.trim() ? body.note.trim() : null,
     });
     return json({ id: card.id, deckId: card.deckId, deckName }, { status: 201 });
   } catch (e) {

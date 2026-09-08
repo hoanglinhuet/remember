@@ -393,7 +393,7 @@ await swatchRow(cSec, [
 const catSec = col('Categories', 16);
 sheet.appendChild(catSec); catSec.layoutSizingHorizontal = 'FILL';
 await sectionTitle(catSec, 'Màu theo khu vực',
-  'Mỗi đích điều hướng và mỗi cách ôn có một sắc riêng, để icon và thẻ deck đọc ra màu chứ không phải nền xám. Bốn sắc này chỉ dùng cho NHẬN DIỆN — chúng không bao giờ mang dữ liệu, nên không đụng vào dải bậc nhớ, màu đến hạn hay bốn màu chấm.');
+  'Mỗi đích điều hướng và mỗi cách ôn có một sắc riêng, để icon và thẻ deck đọc ra màu chứ không phải nền xám. Năm sắc này chỉ dùng cho NHẬN DIỆN — chúng không bao giờ mang dữ liệu, nên không đụng vào dải bậc nhớ, màu đến hạn hay bốn màu chấm. Sắc thứ năm (indigo) thêm vào khi Bộ thẻ thành một tab riêng: năm đích thì cần năm nhận diện.');
 await swatchRow(catSec, [
   ['cat/violet', '#6B3BF5', '#9B7BFF'], ['cat/violet-soft', '#EFE9FE', '#261F49'],
   ['cat/teal', '#00A6A0', '#2FD3CC'], ['cat/teal-soft', '#D8F6F4', '#0E332F'],
@@ -401,6 +401,7 @@ await swatchRow(catSec, [
 ]);
 await swatchRow(catSec, [
   ['cat/blue', '#1D7BFF', '#67A8FF'], ['cat/blue-soft', '#E0EDFF', '#0F2340'],
+  ['cat/indigo', '#4C5FD7', '#8F9DFA'], ['cat/indigo-soft', '#E5E8FB', '#1B2044'],
 ]);
 
 const lSec = col('Levels', 16);

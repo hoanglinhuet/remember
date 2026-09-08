@@ -36,24 +36,34 @@ function withCors(req: Request, res: Response): Response {
   // Whitelist tường minh, KHÔNG dùng `*`: request mang token.
   h.set('Access-Control-Allow-Origin', origin);
   h.set('Access-Control-Allow-Headers', 'authorization, content-type');
-  h.set('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  h.set('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   h.set('Vary', 'Origin');
   return new Response(res.body, { status: res.status, headers: h });
 }
 
-export interface Ctx {
+export interface Ctx<P = Record<string, never>> {
   user: User;
   db: Database;
+  /** Tham số của segment động (`[id]`), đã await. Route tĩnh thì là object rỗng. */
+  params: P;
+}
+
+/** Đối số thứ hai Next.js truyền cho route handler. `params` là Promise từ Next 15. */
+interface RouteContext<P> {
+  params?: Promise<P>;
 }
 
 /**
  * DECORATOR: bọc handler bằng xác thực, CORS và xử lý lỗi.
  * Handler bên trong chỉ còn việc của nó, không lặp lại 20 dòng boilerplate ở 9 chỗ.
+ *
+ * Tham số động lấy qua `ctx.params` — decorator await sẵn, để handler không phải
+ * nhớ rằng `params` của Next.js là một Promise.
  */
-export function route(
-  handler: (req: Request, ctx: Ctx) => Promise<Response>,
-): (req: Request) => Promise<Response> {
-  return async (req: Request) => {
+export function route<P = Record<string, never>>(
+  handler: (req: Request, ctx: Ctx<P>) => Promise<Response>,
+): (req: Request, rc?: RouteContext<P>) => Promise<Response> {
+  return async (req: Request, rc?: RouteContext<P>) => {
     if (req.method === 'OPTIONS') return withCors(req, new Response(null, { status: 204 }));
     try {
       if (!isConfigured) {
@@ -67,7 +77,8 @@ export function route(
         (await currentUser()) ?? (await userFromBearer(req.headers.get('authorization')));
       if (!user) return withCors(req, fail('unauthorized', 'Chưa đăng nhập', 401));
 
-      return withCors(req, await handler(req, { user, db: getDb() }));
+      const params = ((await rc?.params) ?? {}) as P;
+      return withCors(req, await handler(req, { user, db: getDb(), params }));
     } catch (e) {
       // Không trả stack ra ngoài; xem trong Vercel Logs.
       console.error('[api]', req.method, new URL(req.url).pathname, e);

@@ -1,5 +1,5 @@
 import type {
-  Card, CardProgress, CardState, Deck, Rating, StudyConfig,
+  Card, CardProgress, CardState, Deck, Rating, ReadingType, StudyConfig,
 } from '@/lib/domain/types';
 
 /**
@@ -29,6 +29,21 @@ export interface CardRepository {
    * `book` (động từ) là hai thẻ khác nhau, và hai bộ nghĩa khác nhau cũng vậy.
    */
   findDuplicate(key: DedupeKey): Promise<{ id: string; deckName: string | null } | null>;
+  get(cardId: string): Promise<Card | null>;
+  /**
+   * Sửa thẻ. Chỉ những khoá CÓ MẶT trong patch bị ghi — `undefined` là "đừng đụng",
+   * `null` là "xoá giá trị". Hai thứ đó không thể trộn thành một: sửa nghĩa mà vô
+   * tình xoá luôn IPA là mất dữ liệu không lấy lại được.
+   *
+   * Sửa `front`/`pos`/`back` là đổi khoá dedupe, nên cài đặt phải kiểm trùng lại
+   * và ném `DuplicateCard` — giống lúc tạo.
+   */
+  update(cardId: string, patch: CardPatch): Promise<Card | null>;
+  /** Xoá mềm: đặt `deleted_at`. Thẻ đã xoá không chặn việc lưu lại từ đó về sau. */
+  softDelete(cardId: string): Promise<boolean>;
+  /** Dồn mọi thẻ của một deck sang deck khác (null = về nhóm "không có deck"). */
+  moveAll(fromDeckId: string, toDeckId: string | null): Promise<number>;
+  softDeleteAllInDeck(deckId: string): Promise<number>;
 }
 
 export interface DeckRepository {
@@ -36,6 +51,9 @@ export interface DeckRepository {
   /** Luôn tồn tại ít nhất một deck: "deck đầu tiên" là mặc định khi lưu thẻ. */
   ensureAtLeastOne(): Promise<Deck[]>;
   create(name: string, sortOrder: number): Promise<Deck>;
+  rename(deckId: string, name: string): Promise<Deck | null>;
+  /** Xoá mềm deck. Thẻ bên trong do use case định đoạt TRƯỚC, xem `deleteDeck()`. */
+  softDelete(deckId: string): Promise<boolean>;
 }
 
 export interface ProgressRepository {
@@ -99,6 +117,23 @@ export interface NewCardInput {
   contextSentence?: string | null;
   sourceUrl?: string | null;
   sourceTitle?: string | null;
+  note?: string | null;
+}
+
+/**
+ * Phần sửa được của một thẻ. Cố ý KHÔNG có `id`, `normalizedFront`, `langFrom`,
+ * `langTo`: hai cái sau là một phần khoá dedupe và đổi chúng nghĩa là thẻ khác,
+ * còn `normalizedFront` là dẫn xuất của `front` nên adapter tự tính lại.
+ */
+export interface CardPatch {
+  deckId?: string | null;
+  front?: string;
+  back?: string[];
+  reading?: string | null;
+  readingType?: ReadingType | null;
+  pos?: string | null;
+  contextSentence?: string | null;
+  note?: string | null;
 }
 
 export interface ReviewLogInput {

@@ -1,6 +1,7 @@
 import type {
-  Card, DailyRoom, DeckSummary, GlossOption, QueueItem, Stats, StudyConfig,
+  Card, CardState, DailyRoom, Deck, DeckSummary, GlossOption, QueueItem, Stats, StudyConfig,
 } from '@/lib/domain/types';
+import type { MemoryLevel } from '@/lib/domain/memory';
 
 /**
  * PORTS — tầng ĐỌC (read model).
@@ -29,6 +30,43 @@ export interface StudyQueries {
    * Trả theo từ (không lọc pos/nghĩa) vì UI cần đối chiếu từng nghĩa một.
    */
   cardsByFront(front: string, langFrom: string, langTo: string): Promise<ExistingCard[]>;
+
+  /** Một deck theo id — để trang quản lý biết mình đang mở deck nào (hoặc 404). */
+  deck(deckId: string): Promise<Deck | null>;
+
+  /**
+   * Thẻ trong một deck, có phân trang — màn hình quản lý thẻ.
+   *
+   * KHÔNG dùng `buildQueue` cho việc này: hàng đợi bỏ thẻ bị treo, bỏ thẻ chưa đến
+   * hạn và cắt theo hạn mức ngày. Quản lý thì phải thấy đủ, kể cả thẻ treo.
+   *
+   * `deckId = null` là nhóm "không có deck" (thẻ mồ côi sau khi xoá deck).
+   */
+  deckCards(opts: DeckCardsQuery): Promise<DeckCardsPage>;
+}
+
+export interface DeckCardsQuery {
+  deckId: string | null;
+  /** Lọc theo từ hoặc nghĩa; đã chuẩn hoá chữ thường ở adapter. */
+  q?: string;
+  limit: number;
+  offset: number;
+}
+
+/** Thẻ kèm phần tiến độ mà màn hình quản lý cần — không phải cả `CardProgress`. */
+export interface DeckCard extends Card {
+  state: CardState | null;
+  due: string | null;
+  suspended: boolean;
+  reps: number;
+  lapses: number;
+  level: MemoryLevel;
+}
+
+export interface DeckCardsPage {
+  cards: DeckCard[];
+  /** Tổng số thẻ KHỚP bộ lọc, để biết còn trang sau hay không. */
+  total: number;
 }
 
 export interface ExistingCard {

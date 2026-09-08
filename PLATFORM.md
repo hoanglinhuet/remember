@@ -180,7 +180,12 @@ buộc phải vượt RLS (xoá tài khoản, job dọn).
 |---|---|---|
 | `GET  /v1/me` | cả hai | profile, `serverSchema`, hạn mức còn lại hôm nay |
 | `GET  /v1/decks` · `POST /v1/decks` | cả hai | danh sách / tạo deck |
-| **`POST /v1/cards`** | **extension khi lưu từ** · web khi tra | tạo/upsert thẻ theo `id` do client sinh ⇒ **idempotent**; dedupe ở server, trùng thì trả `409` kèm deck đang chứa |
+| `PATCH /v1/decks/{id}` | web | đổi tên deck; trùng tên deck khác trả `409` (khác `POST` — ở đó trùng tên nghĩa là "mở deck sẵn có") |
+| `DELETE /v1/decks/{id}?cards=move\|delete` | web | xoá mềm deck. `move` (mặc định) dồn thẻ sang deck khác — deck cuối cùng thì thẻ về nhóm "không có deck"; `delete` xoá mềm cả thẻ |
+| `GET  /v1/decks/{id}/cards?q=&limit=&offset=` | web | thẻ trong deck để quản lý: có phân trang, tìm theo từ **và** theo nghĩa, và **thấy cả thẻ bị treo** (khác `study/queue`). `{id}` = `none` là nhóm "không có deck" |
+| **`POST /v1/cards`** | **extension khi lưu từ** · web khi tra hoặc gõ tay | tạo/upsert thẻ theo `id` do client sinh ⇒ **idempotent**; dedupe ở server, trùng thì trả `409` kèm deck đang chứa |
+| `PATCH /v1/cards/{id}` | web | sửa thẻ. Chỉ field CÓ MẶT trong body bị ghi (`null` = xoá giá trị); đổi `front`/`pos`/`back` là đổi khoá dedupe nên có thể trả `409` |
+| `DELETE /v1/cards/{id}` | web | xoá **mềm**: giữ `card_states` + `review_logs`, và không chặn việc lưu lại đúng từ đó về sau |
 | `POST /v1/cards/batch` | extension flush outbox | tối đa 200 thẻ/lần |
 | `GET  /v1/study/queue?deck=&limit=` | web | hàng đợi phiên: `cards ⨝ card_states`, đã áp day cutoff + hạn mức ngày |
 | **`POST /v1/study/answer`** | web | nhận `{cardId, rating, answeredAt}` → **server tính FSRS** (ADR-26) → ghi `card_states` + `review_logs` trong một transaction |

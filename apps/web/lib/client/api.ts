@@ -1,7 +1,9 @@
 import type {
-  AnswerResult, ApiError, DeckSummary, Me, Rating, ReadingType, Stats, StudyConfig, StudyQueue,
+  AnswerResult, ApiError, Card, Deck, DeckSummary, Me, Rating, ReadingType, Stats, StudyConfig,
+  StudyQueue,
 } from '@/lib/domain/types';
-import type { ExistingCard } from '@/lib/ports/queries';
+import type { DeckCardsPage, ExistingCard } from '@/lib/ports/queries';
+import type { CardPatch } from '@/lib/ports/repositories';
 
 export interface NewCard {
   deckId?: string | null;
@@ -15,7 +17,11 @@ export interface NewCard {
   contextSentence?: string | null;
   sourceUrl?: string | null;
   sourceTitle?: string | null;
+  note?: string | null;
 }
+
+/** Thẻ trong deck bị xoá đi đâu — xem `deleteDeck()` ở tầng use case. */
+export type DeckDeleteMode = 'move' | 'delete';
 
 /**
  * Client gọi API. KHÔNG import gì từ lib/server - `import 'server-only'` bên đó sẽ
@@ -68,6 +74,25 @@ export const api = {
     call<{ deck: { id: string; name: string }; existed: boolean }>('/decks', {
       method: 'POST', body: JSON.stringify({ name }),
     }),
+  renameDeck: (deckId: string, name: string) =>
+    call<{ deck: Deck }>(`/decks/${encodeURIComponent(deckId)}`, {
+      method: 'PATCH', body: JSON.stringify({ name }),
+    }),
+  deleteDeck: (deckId: string, cards: DeckDeleteMode = 'move') =>
+    call<{ cards: number; movedTo: Deck | null }>(
+      `/decks/${encodeURIComponent(deckId)}?cards=${cards}`,
+      { method: 'DELETE' },
+    ),
+
+  deckCards: (deckId: string, opts: { q?: string; limit?: number; offset?: number } = {}) => {
+    const sp = new URLSearchParams();
+    if (opts.q) sp.set('q', opts.q);
+    sp.set('limit', String(opts.limit ?? 50));
+    sp.set('offset', String(opts.offset ?? 0));
+    return call<DeckCardsPage>(
+      `/decks/${encodeURIComponent(deckId || 'none')}/cards?${sp.toString()}`,
+    );
+  },
 
   stats: () => call<Stats>('/stats'),
 
@@ -86,6 +111,12 @@ export const api = {
     call<{ id: string; deckId: string; deckName: string | null }>('/cards', {
       method: 'POST', body: JSON.stringify(card),
     }),
+  updateCard: (cardId: string, patch: CardPatch) =>
+    call<{ card: Card }>(`/cards/${encodeURIComponent(cardId)}`, {
+      method: 'PATCH', body: JSON.stringify(patch),
+    }),
+  deleteCard: (cardId: string) =>
+    call<{ deleted: true }>(`/cards/${encodeURIComponent(cardId)}`, { method: 'DELETE' }),
 
   queue: (deckId?: string | null) =>
     call<StudyQueue>(`/study/queue${deckId ? `?deck=${encodeURIComponent(deckId)}` : ''}`),

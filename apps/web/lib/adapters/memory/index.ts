@@ -3,8 +3,12 @@ import { randomBytes } from 'node:crypto';
 import { newPairingCode, normalizePairingCode } from '@/lib/server/pairing-code';
 import type { Database } from '@/lib/ports/db';
 import type { IdentityRepository, User } from '@/lib/ports/identity';
-import type { ExistingCard, QueueResult, RecentCard, StudyQueries } from '@/lib/ports/queries';
-import type { DedupeKey, NewCardInput, Repos, ReviewLogInput, UnitOfWork } from '@/lib/ports/repositories';
+import type {
+  DeckCard, DeckCardsPage, DeckCardsQuery, ExistingCard, QueueResult, RecentCard, StudyQueries,
+} from '@/lib/ports/queries';
+import type {
+  CardPatch, DedupeKey, NewCardInput, Repos, ReviewLogInput, UnitOfWork,
+} from '@/lib/ports/repositories';
 import { DuplicateCard } from '@/lib/ports/repositories';
 import type {
   Card, CardProgress, DailyRoom, Deck, DeckSummary, Stats, StudyConfig,
@@ -35,8 +39,9 @@ interface Store {
   sessions: Map<string, { userId: string; expiresAt: Date }>;
   states: Map<string, { codeVerifier: string; nextPath: string; expiresAt: Date }>;
   pairings: Map<string, { userId: string; expiresAt: Date }>;
-  decks: Map<string, Deck & { userId: string }>;
-  cards: Map<string, Card & { userId: string }>;
+  /** `deletedAt` để xoá mềm giống bản Postgres — hàng xoá rồi không chặn dedupe. */
+  decks: Map<string, Deck & { userId: string; deletedAt?: string }>;
+  cards: Map<string, Card & { userId: string; deletedAt?: string }>;
   progress: Map<string, CardProgress & { userId: string }>;
   logs: (ReviewLogInput & { userId: string; cardId: string })[];
 }
@@ -157,7 +162,8 @@ function makeRepos(userId: string): Repos {
   const decks = {
     async list(): Promise<Deck[]> {
       return mine(s.decks)
-        .map(({ userId: _u, ...d }) => d)
+        .filter((d) => !d.deletedAt)
+        .map(({ userId: _u, deletedAt: _d, ...d }) => d)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
     },
     async ensureAtLeastOne(): Promise<Deck[]> {
@@ -172,6 +178,20 @@ function makeRepos(userId: string): Repos {
       };
       s.decks.set(deck.id, { ...deck, userId });
       return deck;
+    },
+    async rename(deckId: string, name: string): Promise<Deck | null> {
+      const d = s.decks.get(deckId);
+      if (!d || d.userId !== userId || d.deletedAt) return null;
+      d.name = name;
+      d.updatedAt = new Date().toISOString();
+      const { userId: _u, deletedAt: _d, ...deck } = d;
+      return deck;
+    },
+    async softDelete(deckId: string): Promise<boolean> {
+      const d = s.decks.get(deckId);
+      if (!d || d.userId !== userId || d.deletedAt) return false;
+      d.deletedAt = new Date().toISOString();
+      return true;
     },
   };
 
@@ -198,14 +218,67 @@ function makeRepos(userId: string): Repos {
         back: input.back, reading: input.reading ?? null, readingType: input.readingType ?? null,
         pos: input.pos ?? null, langFrom, langTo,
         contextSentence: input.contextSentence ?? null, sourceUrl: input.sourceUrl ?? null,
-        sourceTitle: input.sourceTitle ?? null, tags: [], note: null,
+        sourceTitle: input.sourceTitle ?? null, tags: [], note: input.note ?? null,
         createdAt: s.cards.get(id)?.createdAt ?? now, updatedAt: now,
       };
       s.cards.set(id, { ...card, userId });
       return card;
     },
     async exists(cardId: string) {
-      return s.cards.get(cardId)?.userId === userId;
+      const c = s.cards.get(cardId);
+      return c?.userId === userId && !c.deletedAt;
+    },
+    async get(cardId: string): Promise<Card | null> {
+      const c = s.cards.get(cardId);
+      if (!c || c.userId !== userId || c.deletedAt) return null;
+      const { userId: _u, deletedAt: _d, ...card } = c;
+      return card;
+    },
+    async update(cardId: string, patch: CardPatch): Promise<Card | null> {
+      const current = await cards.get(cardId);
+      if (!current) return null;
+
+      const next = { ...current, ...patch };
+      const clash = await cards.findDuplicate({
+        normalizedFront: normalizeFront(next.front),
+        pos: next.pos,
+        backKey: senseKey(next.back),
+        langFrom: current.langFrom,
+        langTo: current.langTo,
+      });
+      if (clash && clash.id !== cardId) throw new DuplicateCard(clash.id, clash.deckName);
+
+      const card: Card = {
+        ...next,
+        normalizedFront: normalizeFront(next.front),
+        updatedAt: new Date().toISOString(),
+      };
+      s.cards.set(cardId, { ...card, userId });
+      return card;
+    },
+    async softDelete(cardId: string): Promise<boolean> {
+      const c = s.cards.get(cardId);
+      if (!c || c.userId !== userId || c.deletedAt) return false;
+      c.deletedAt = new Date().toISOString();
+      return true;
+    },
+    async moveAll(fromDeckId: string, toDeckId: string | null): Promise<number> {
+      let n = 0;
+      for (const c of mine(s.cards)) {
+        if (c.deletedAt || c.deckId !== fromDeckId) continue;
+        c.deckId = toDeckId;
+        n++;
+      }
+      return n;
+    },
+    async softDeleteAllInDeck(deckId: string): Promise<number> {
+      let n = 0;
+      for (const c of mine(s.cards)) {
+        if (c.deletedAt || c.deckId !== deckId) continue;
+        c.deletedAt = new Date().toISOString();
+        n++;
+      }
+      return n;
     },
     async addTag(cardId: string, tag: string) {
       const c = s.cards.get(cardId);
@@ -213,7 +286,8 @@ function makeRepos(userId: string): Repos {
     },
     async findDuplicate(key: DedupeKey) {
       const c = mine(s.cards).find(
-        (x) => x.normalizedFront === key.normalizedFront
+        (x) => !x.deletedAt
+          && x.normalizedFront === key.normalizedFront
           && (x.pos ?? '') === (key.pos ?? '')
           && senseKey(x.back) === key.backKey
           && x.langFrom === key.langFrom && x.langTo === key.langTo,
@@ -263,7 +337,8 @@ const uow: UnitOfWork = {
 
 function makeQueries(userId: string): StudyQueries {
   const s = store();
-  const mineCards = () => [...s.cards.values()].filter((c) => c.userId === userId);
+  const mineCards = () =>
+    [...s.cards.values()].filter((c) => c.userId === userId && !c.deletedAt);
   const mineProgress = () => [...s.progress.values()].filter((p) => p.userId === userId);
 
   const queries: StudyQueries = {
@@ -284,10 +359,10 @@ function makeQueries(userId: string): StudyQueries {
     },
 
     async deckSummaries(now = new Date()): Promise<DeckSummary[]> {
-      const decks = [...s.decks.values()].filter((d) => d.userId === userId);
+      const decks = [...s.decks.values()].filter((d) => d.userId === userId && !d.deletedAt);
       const byCard = new Map(mineProgress().map((p) => [p.cardId, p]));
 
-      return decks.map(({ userId: _u, ...d }) => {
+      return decks.map(({ userId: _u, deletedAt: _x, ...d }) => {
         const cards = mineCards().filter((c) => c.deckId === d.id);
         const row: DeckSummary = {
           ...d, total: cards.length, due: 0, fresh: 0, suspended: 0, levels: [0, 0, 0, 0, 0],
@@ -340,7 +415,7 @@ function makeQueries(userId: string): StudyQueries {
         .slice()
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, limit)
-        .map(({ userId: _u, ...c }) => ({
+        .map(({ userId: _u, deletedAt: _d, ...c }) => ({
           ...c,
           deckName: s.decks.get(c.deckId ?? '')?.name ?? null,
         }));
@@ -358,6 +433,42 @@ function makeQueries(userId: string): StudyQueries {
           deckName: s.decks.get(c.deckId ?? '')?.name ?? null,
           createdAt: c.createdAt,
         }));
+    },
+
+    async deck(deckId: string): Promise<Deck | null> {
+      const d = s.decks.get(deckId);
+      if (!d || d.userId !== userId || d.deletedAt) return null;
+      const { userId: _u, deletedAt: _x, ...deck } = d;
+      return deck;
+    },
+
+    async deckCards(opts: DeckCardsQuery): Promise<DeckCardsPage> {
+      const term = opts.q?.trim().toLowerCase();
+      const byCard = new Map(mineProgress().map((pr) => [pr.cardId, pr]));
+      const matched = mineCards()
+        .filter((c) => (c.deckId ?? null) === opts.deckId)
+        .filter((c) => !term
+          || c.normalizedFront.includes(term)
+          || senseKey(c.back).includes(term))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      return {
+        total: matched.length,
+        cards: matched
+          .slice(opts.offset, opts.offset + opts.limit)
+          .map(({ userId: _u, deletedAt: _d, ...card }): DeckCard => {
+            const pr = byCard.get(card.id) ?? null;
+            return {
+              ...card,
+              state: pr?.state ?? null,
+              due: pr?.due ?? null,
+              suspended: pr?.suspended ?? false,
+              reps: pr?.reps ?? 0,
+              lapses: pr?.lapses ?? 0,
+              level: memoryLevel(pr, DEFAULT_CONFIG.levelThresholds),
+            };
+          }),
+      };
     },
 
     async stats(): Promise<Stats> {

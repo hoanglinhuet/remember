@@ -1,0 +1,3 @@
+- thông báo đến hạn
+- tắt số trên extension
+- faicon

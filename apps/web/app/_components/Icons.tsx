@@ -117,3 +117,35 @@ export const IconCheck = (p: P) => (
     <path d="M5 13l4.5 4.5L19 7" />
   </Svg>
 );
+
+export const IconPlus = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Svg>
+);
+
+/** Bút chì — sửa. Nét thân bút vẽ rời để đầu bút vẫn nhọn ở 20px. */
+export const IconPencil = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 20h4l10-10a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5z" />
+    <path d="M14 7.5 16.5 10" />
+  </Svg>
+);
+
+export const IconTrash = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 7h16" />
+    <path d="M9.5 7V4.5h5V7" />
+    <path d="M6.5 7v12a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5V7" />
+    <path d="M10.5 11v6M13.5 11v6" />
+  </Svg>
+);
+
+/** Ngăn xếp có nhãn — nơi quản lý các bộ thẻ, khác IconCards (việc học). */
+export const IconStack = (p: P) => (
+  <Svg {...p}>
+    <path d="M3.5 8.5 12 4l8.5 4.5L12 13z" />
+    <path d="M3.5 13 12 17.5 20.5 13" />
+    <path d="M3.5 17 12 21.5 20.5 17" />
+  </Svg>
+);

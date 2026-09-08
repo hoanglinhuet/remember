@@ -4,8 +4,12 @@ import { createHash, randomBytes } from 'node:crypto';
 import { hashPairingCode, newPairingCode } from '@/lib/server/pairing-code';
 import type { Database } from '@/lib/ports/db';
 import type { IdentityRepository, User } from '@/lib/ports/identity';
-import type { ExistingCard, QueueResult, RecentCard, StudyQueries } from '@/lib/ports/queries';
-import type { DedupeKey, NewCardInput, Repos, ReviewLogInput, UnitOfWork } from '@/lib/ports/repositories';
+import type {
+  DeckCard, DeckCardsPage, DeckCardsQuery, ExistingCard, QueueResult, RecentCard, StudyQueries,
+} from '@/lib/ports/queries';
+import type {
+  CardPatch, DedupeKey, NewCardInput, Repos, ReviewLogInput, UnitOfWork,
+} from '@/lib/ports/repositories';
 import { DuplicateCard } from '@/lib/ports/repositories';
 import type {
   Card, CardProgress, CardState, DailyRoom, Deck, DeckSummary, QueueItem, Stats, StudyConfig,
@@ -161,6 +165,20 @@ function makeRepos(sql: Sql, userId: string): Repos {
         returning id, name, parent_id, sort_order, updated_at`;
       return toDeck(rows[0]!);
     },
+    async rename(deckId: string, name: string): Promise<Deck | null> {
+      const rows = await sql`
+        update decks set name = ${name}
+        where id = ${deckId} and user_id = ${userId} and deleted_at is null
+        returning id, name, parent_id, sort_order, updated_at`;
+      return rows[0] ? toDeck(rows[0]) : null;
+    },
+    async softDelete(deckId: string): Promise<boolean> {
+      const rows = await sql`
+        update decks set deleted_at = now()
+        where id = ${deckId} and user_id = ${userId} and deleted_at is null
+        returning id`;
+      return rows.length > 0;
+    },
   };
 
   const cards = {
@@ -184,13 +202,13 @@ function makeRepos(sql: Sql, userId: string): Repos {
         const rows = await sql`
           insert into cards (id, user_id, deck_id, front, normalized_front, back, back_key,
                              reading, reading_type, pos, lang_from, lang_to, context_sentence,
-                             source_url, source_title)
+                             source_url, source_title, note)
           values (${id}, ${userId}, ${deckId}, ${input.front}, ${normalized},
                   ${sql.json(input.back as never)}, ${backKey}, ${input.reading ?? null},
                   ${input.readingType ?? null}, ${pos},
                   ${langFrom}, ${langTo},
                   ${input.contextSentence ?? null}, ${input.sourceUrl ?? null},
-                  ${input.sourceTitle ?? null})
+                  ${input.sourceTitle ?? null}, ${input.note ?? null})
           on conflict (id) do update set
             deck_id = excluded.deck_id, front = excluded.front, back = excluded.back,
             back_key = excluded.back_key, reading = excluded.reading,
@@ -216,6 +234,67 @@ function makeRepos(sql: Sql, userId: string): Repos {
       await sql`
         update cards set tags = array_append(tags, ${tag})
         where id = ${cardId} and user_id = ${userId} and not (${tag} = any(tags))`;
+    },
+    async get(cardId: string): Promise<Card | null> {
+      const rows = await sql`
+        select * from cards
+        where id = ${cardId} and user_id = ${userId} and deleted_at is null`;
+      return rows[0] ? toCard(rows[0]) : null;
+    },
+    async update(cardId: string, patch: CardPatch): Promise<Card | null> {
+      const current = await cards.get(cardId);
+      if (!current) return null;
+
+      // `undefined` trong patch = "đừng đụng"; spread giữ đúng nghĩa đó, còn `null`
+      // vẫn đi qua để xoá được IPA/ngữ cảnh/ghi chú.
+      const next = { ...current, ...patch };
+      const normalized = normalizeFront(next.front);
+      const backKey = senseKey(next.back);
+
+      // Kiểm trùng TRƯỚC khi update, cùng lý do như lúc tạo: statement lỗi 23505 làm
+      // ABORT cả transaction nên không truy vấn được gì sau đó để dựng lỗi 409.
+      const dup = await cards.findDuplicate({
+        normalizedFront: normalized,
+        pos: next.pos,
+        backKey,
+        langFrom: current.langFrom,
+        langTo: current.langTo,
+      });
+      if (dup && dup.id !== cardId) throw new DuplicateCard(dup.id, dup.deckName);
+
+      const rows = await sql`
+        update cards set
+          deck_id = ${next.deckId}, front = ${next.front}, normalized_front = ${normalized},
+          back = ${sql.json(next.back as never)}, back_key = ${backKey},
+          reading = ${next.reading}, reading_type = ${next.readingType}, pos = ${next.pos},
+          context_sentence = ${next.contextSentence}, note = ${next.note}
+        where id = ${cardId} and user_id = ${userId} and deleted_at is null
+        returning *`;
+      return rows[0] ? toCard(rows[0]) : null;
+    },
+    async softDelete(cardId: string): Promise<boolean> {
+      // Xoá MỀM: `cards_dedupe` là partial index `where deleted_at is null`, nên thẻ
+      // đã xoá không chặn việc lưu lại đúng từ đó về sau. Tiến độ và review_logs giữ
+      // nguyên — xoá cứng sẽ cascade mất cả lịch sử ôn, thứ không dựng lại được.
+      const rows = await sql`
+        update cards set deleted_at = now()
+        where id = ${cardId} and user_id = ${userId} and deleted_at is null
+        returning id`;
+      return rows.length > 0;
+    },
+    async moveAll(fromDeckId: string, toDeckId: string | null): Promise<number> {
+      const rows = await sql`
+        update cards set deck_id = ${toDeckId}
+        where user_id = ${userId} and deck_id = ${fromDeckId} and deleted_at is null
+        returning id`;
+      return rows.length;
+    },
+    async softDeleteAllInDeck(deckId: string): Promise<number> {
+      const rows = await sql`
+        update cards set deleted_at = now()
+        where user_id = ${userId} and deck_id = ${deckId} and deleted_at is null
+        returning id`;
+      return rows.length;
     },
     async findDuplicate(key: DedupeKey) {
       // So đúng bộ khoá của index cards_dedupe: coalesce(pos,'') để NULL khớp NULL.
@@ -512,6 +591,63 @@ function makeQueries(userId: string): StudyQueries {
         deckName: (r.deck_name as string | null) ?? null,
         createdAt: new Date(r.created_at).toISOString(),
       }));
+    },
+
+    async deck(deckId: string): Promise<Deck | null> {
+      const rows = await read((tx) => tx`
+        select id, name, parent_id, sort_order, updated_at from decks
+        where id = ${deckId} and user_id = ${userId} and deleted_at is null`);
+      return rows[0] ? toDeck(rows[0]) : null;
+    },
+
+    async deckCards(opts: DeckCardsQuery): Promise<DeckCardsPage> {
+      const term = opts.q?.trim().toLowerCase();
+      const like = term ? `%${term}%` : null;
+
+      const { cfg, rows, count } = await read(async (tx) => {
+        // Điều kiện dùng cho CẢ trang thẻ và tổng số, viết một lần để hai bên không
+        // lệch nhau. `back_key` đã là chữ thường nối bằng '|' nên tìm nghĩa trong đó
+        // là đủ, không cần unnest jsonb.
+        const where = tx`
+          c.user_id = ${userId} and c.deleted_at is null
+          and ${opts.deckId === null ? tx`c.deck_id is null` : tx`c.deck_id = ${opts.deckId}`}
+          ${like
+            ? tx`and (c.normalized_front like ${like} or c.back_key like ${like})`
+            : tx``}`;
+        const [cfg, rows, count] = await Promise.all([
+          configIn(tx),
+          tx`
+            select c.*, s.state, s.due, s.stability, s.reps, s.lapses, s.suspended
+            from cards c left join card_states s on s.card_id = c.id
+            where ${where}
+            order by c.created_at desc
+            limit ${opts.limit} offset ${opts.offset}`,
+          tx`select count(*) as n from cards c where ${where}`,
+        ]);
+        return { cfg, rows, count };
+      });
+
+      return {
+        total: Number(count[0]?.n ?? 0),
+        cards: rows.map((r): DeckCard => ({
+          ...toCard(r),
+          state: (r.state as CardState | null) ?? null,
+          due: r.due ? new Date(r.due).toISOString() : null,
+          suspended: Boolean(r.suspended),
+          reps: Number(r.reps ?? 0),
+          lapses: Number(r.lapses ?? 0),
+          level: memoryLevel(
+            r.state
+              ? {
+                  state: r.state as CardState,
+                  reps: Number(r.reps ?? 0),
+                  stability: r.stability ?? null,
+                }
+              : null,
+            cfg.levelThresholds,
+          ),
+        })),
+      };
     },
 
     async stats(now = new Date()): Promise<Stats> {

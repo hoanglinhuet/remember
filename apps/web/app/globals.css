@@ -50,11 +50,15 @@
   --c4: #6b3bf5;
   --c5: #4718be;
 
-  /* identity hues: one per navigation destination and per study mode */
+  /* identity hues: one per navigation destination and per study mode.
+     Indigo is the fifth, added when deck management became its own tab: five
+     destinations need five identities. It stays clear of the amber `--due` and
+     of the four rating hues, because identity must never read as data. */
   --cat-violet: #6b3bf5;  --cat-violet-soft: #efe9fe;
   --cat-teal:   #00a6a0;  --cat-teal-soft:   #d8f6f4;
   --cat-rose:   #ee3d7c;  --cat-rose-soft:   #ffe3ed;
   --cat-blue:   #1d7bff;  --cat-blue-soft:   #e0edff;
+  --cat-indigo: #4c5fd7;  --cat-indigo-soft: #e5e8fb;
 
   /* radius is a hierarchy — bigger surface, bigger radius */
   --r-sm: 8px;
@@ -96,6 +100,7 @@
     --cat-teal:   #2fd3cc;  --cat-teal-soft:   #0e332f;
     --cat-rose:   #ff7ba8;  --cat-rose-soft:   #3a1424;
     --cat-blue:   #67a8ff;  --cat-blue-soft:   #0f2340;
+    --cat-indigo: #8f9dfa;  --cat-indigo-soft: #1b2044;
   }
 }
 
@@ -193,6 +198,16 @@ button.icon { min-height: 40px; padding: 0 10px; }
   font-family: var(--font-serif), Cambria, Georgia, serif;
   font-size: 32px; font-weight: 600; letter-spacing: -0.01em; word-break: break-word;
 }
+/* Từ và nút đọc thành một hàng. `min-width: 0` trên từ để từ dài vẫn ngắt dòng
+   trong hàng flex thay vì đẩy nút ra khỏi mặt thẻ. */
+.term-row { display: flex; align-items: center; justify-content: center; gap: 10px; max-width: 100%; }
+.term-row .term { min-width: 0; }
+.term-speak {
+  flex: none; width: 38px; height: 38px; min-height: 38px; padding: 0;
+  border-radius: 50%; display: grid; place-items: center;
+  color: var(--accent); background: var(--accent-soft); border: 0;
+}
+.term-speak:active { transform: scale(0.92); }
 .ipa { font-size: 15px; color: var(--muted); font-family: var(--font-serif), Cambria, serif; }
 .pos {
   font-size: 11.5px; font-weight: 600; letter-spacing: 0.01em;
@@ -544,9 +559,11 @@ li.lsense[data-saved='1'] .lgloss { opacity: 0.85; }
   text-decoration: none; color: var(--muted-2);
   padding: 0; min-height: var(--tap);
 }
+/* Năm tab: viên nền hẹp lại một chút để trên máy 360px hàng vẫn thoáng, nhưng
+   vùng CHẠM vẫn là cả cột `.tab` (flex: 1 × min-height 48px), không phải viên nền. */
 .tab-pill {
   display: grid; place-items: center;
-  width: 52px; height: 30px; border-radius: 999px;
+  width: 46px; height: 30px; border-radius: 999px;
   transition: background 0.14s ease, transform 0.08s ease;
 }
 .tab-label { font-size: 11px; font-weight: 500; letter-spacing: 0.01em; }
@@ -556,12 +573,14 @@ li.lsense[data-saved='1'] .lgloss { opacity: 0.85; }
 .tab[data-hue='teal'] .tab-pill { color: var(--cat-teal); }
 .tab[data-hue='rose'] .tab-pill { color: var(--cat-rose); }
 .tab[data-hue='blue'] .tab-pill { color: var(--cat-blue); }
+.tab[data-hue='indigo'] .tab-pill { color: var(--cat-indigo); }
 .tab[data-on='1'] { color: var(--fg); }
 .tab[data-on='1'] .tab-label { font-weight: 600; }
 .tab[data-on='1'][data-hue='violet'] .tab-pill { background: var(--cat-violet-soft); }
 .tab[data-on='1'][data-hue='teal'] .tab-pill { background: var(--cat-teal-soft); }
 .tab[data-on='1'][data-hue='rose'] .tab-pill { background: var(--cat-rose-soft); }
 .tab[data-on='1'][data-hue='blue'] .tab-pill { background: var(--cat-blue-soft); }
+.tab[data-on='1'][data-hue='indigo'] .tab-pill { background: var(--cat-indigo-soft); }
 .tab:active .tab-pill { transform: scale(0.92); }
 
 /* ===================================================== nút icon tròn */
@@ -690,3 +709,70 @@ li.lsense[data-saved='1'] .lgloss { opacity: 0.85; }
 .navrow .tile[data-hue='teal'] { color: var(--cat-teal); background: var(--cat-teal-soft); }
 .navrow .meta { margin-left: auto; font-size: 13px; font-weight: 400; color: var(--muted-2); }
 .navrow .chev { color: var(--muted-2); flex: none; }
+
+/* ============================================ quản lý bộ thẻ và thẻ */
+/* Một hàng ở đây làm hai việc khác nhau: mở bộ thẻ (cả vùng bên trái) và
+   sửa/xoá (hai nút bên phải). Nút nằm NGOÀI thẻ link, không lồng trong nó —
+   <button> trong <a> vừa sai HTML vừa làm cả hàng thành vùng chạm mơ hồ. */
+.mrow {
+  display: flex; flex-wrap: wrap; align-items: center;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 10px 10px 10px 14px;
+}
+.mrow-main {
+  display: flex; align-items: center; gap: 12px;
+  flex: 1; min-width: 0; text-decoration: none; color: inherit;
+}
+.mrow-acts { display: flex; gap: 2px; flex: none; }
+.mrow:nth-of-type(4n + 1) .deck-tile { color: var(--cat-violet); background: var(--cat-violet-soft); }
+.mrow:nth-of-type(4n + 2) .deck-tile { color: var(--cat-teal); background: var(--cat-teal-soft); }
+.mrow:nth-of-type(4n + 3) .deck-tile { color: var(--cat-blue); background: var(--cat-blue-soft); }
+.mrow:nth-of-type(4n + 4) .deck-tile { color: var(--cat-rose); background: var(--cat-rose-soft); }
+.iconbtn.danger { color: var(--again); }
+
+/* Nút thêm: viền nét đứt để đọc ra "chỗ còn trống", không tranh chỗ với nút chính. */
+.addbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; border: 1px dashed var(--line-strong); background: transparent;
+  color: var(--accent); font-weight: 600;
+}
+
+/* Xác nhận nằm NGAY trong hàng, không phải hộp thoại: hộp thoại che mất thứ
+   đang bị xoá, đúng lúc người dùng cần đọc lại tên nó. */
+/* `width` chứ không phải `flex-basis`: hàng thẻ là flex COLUMN, ở đó flex-basis
+   là chiều cao — hộp xác nhận sẽ bị kéo cao thay vì chiếm trọn bề ngang. */
+.confirm {
+  width: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line);
+}
+.confirm p { margin: 0; flex-basis: 100%; font-size: 13.5px; }
+.confirm button { min-height: 40px; font-size: 13px; padding: 0 12px; }
+.confirm button.warn { color: var(--again); border-color: color-mix(in srgb, var(--again) 40%, var(--line)); }
+
+.editform {
+  display: flex; flex-direction: column; gap: 10px;
+  background: var(--card); border: 1px solid var(--accent);
+  border-radius: var(--r-lg); padding: 14px;
+}
+.editform .row { align-items: flex-end; }
+/* Ô nhiều dòng ở đây là nội dung thẻ, không phải dữ liệu import: chữ thường,
+   không phải monospace. */
+textarea.lines { font: inherit; min-height: 0; }
+
+/* ------------------------------------------------------------- hàng thẻ */
+.cardrow {
+  display: flex; flex-direction: column; gap: 8px;
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-lg); padding: 12px 10px 12px 14px;
+}
+.cardrow-top { display: flex; align-items: flex-start; gap: 10px; }
+.cardrow-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.cardrow-main > b {
+  font-size: 16px; font-weight: 550; display: flex; align-items: center;
+  flex-wrap: wrap; gap: 2px;
+}
+.cardrow-back { font-size: 13.5px; color: var(--muted); }
+.cardrow-meta { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.cardrow-meta .n-due { color: var(--due); }
+.cardrow-meta .n-new { color: var(--accent); }
+.cardrow-meta .n-zero, .cardrow-meta .n-susp { color: var(--muted-2); }

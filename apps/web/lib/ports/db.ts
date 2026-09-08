@@ -20,11 +20,13 @@ export interface Database {
 }
 
 export type { IdentityRepository, PairingCode, Session, User } from './identity';
-export type { ExistingCard, QueueResult, RecentCard, StudyQueries } from './queries';
+export type {
+  DeckCard, DeckCardsPage, DeckCardsQuery, ExistingCard, QueueResult, RecentCard, StudyQueries,
+} from './queries';
 export {
   DuplicateCard,
 } from './repositories';
 export type {
-  CardRepository, DeckRepository, DedupeKey, NewCardInput, ProgressRepository, Repos,
+  CardPatch, CardRepository, DeckRepository, DedupeKey, NewCardInput, ProgressRepository, Repos,
   ReviewLogInput, ReviewLogRepository, SettingsRepository, UnitOfWork,
 } from './repositories';

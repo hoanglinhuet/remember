@@ -158,6 +158,20 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
     }
   }, [item, mode, revealed]);
 
+  /**
+   * Mở đáp án là phát âm luôn — mắt đọc chữ và tai nghe cùng một lúc, không phải
+   * bấm thêm một nút nữa.
+   *
+   * Phát `front` (từ cần học) chứ không phải nghĩa Việt: cái phải nhớ cách đọc là
+   * từ đó. Chạy được vì mở đáp án luôn là do một cú chạm/phím của người dùng —
+   * autoplay của browser chỉ chặn audio không có tương tác nào đứng trước.
+   *
+   * Deps có `item`: sang thẻ mới thì `revealed` về false trước, nên không phát hai lần.
+   */
+  useEffect(() => {
+    if (item && revealed) speak(item.card.front, item.card.langFrom);
+  }, [item, revealed]);
+
   // Ô nhập tự focus để gõ được ngay, không phải chạm thêm một lần trên điện thoại.
   useEffect(() => {
     if (item && typing && !revealed) inputRef.current?.focus();
@@ -341,13 +355,6 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
             {learning.current.length} học lại
           </span>
         )}
-        <span className="spacer" />
-        {/* Nút đọc phải ẩn khi từ đang bị ẩn: bấm là nghe ra đáp án ngay. */}
-        {!hideFront && (
-          <button className="iconbtn" onClick={() => speak(card.front, card.langFrom)} aria-label="Đọc">
-            <IconSpeaker size={22} />
-          </button>
-        )}
       </div>
 
       <div className="progress">
@@ -404,7 +411,25 @@ export default function StudySession({ deckId }: { deckId: string | null }) {
           </p>
         )}
 
-        {!hideFront && <div className="term">{card.front}</div>}
+        {/* Nút đọc đi LIỀN với từ, không nằm ở topbar: mode nhận biết hiện từ ngay
+            từ đầu, nên phải nghe được ngay từ đầu — và chỗ đó cũng là chỗ mắt đang
+            đọc, không phải góc trên cạnh nút thoát.
+            Điều kiện `!hideFront` lo phần an toàn: mode nào đang ẩn từ (nghe rồi gõ,
+            gõ ngược, điền vào câu) thì cả từ và nút đều chưa xuất hiện, nên không có
+            đường nào nghe ra đáp án trước.
+            `stopPropagation` vì cả mặt thẻ là vùng chạm để mở đáp án. */}
+        {!hideFront && (
+          <div className="term-row">
+            <div className="term">{card.front}</div>
+            <button
+              className="term-speak"
+              onClick={(e) => { e.stopPropagation(); speak(card.front, card.langFrom); }}
+              aria-label={`Đọc ${card.front}`}
+            >
+              <IconSpeaker size={21} />
+            </button>
+          </div>
+        )}
         {/* IPA cũng phải ẩn ở mode nghe: nhìn phiên âm là gõ ra được từ. */}
         {!hideFront && card.reading && (
           <div className="ipa">{card.readingType === 'ipa' ? `/${card.reading}/` : card.reading}</div>

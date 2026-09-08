@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { IconBars, IconCards, IconPerson, IconSearch } from './Icons';
+import { IconBars, IconCards, IconPerson, IconSearch, IconStack } from './Icons';
 
 /**
  * Điều hướng đáy, nằm trong vùng ngón tay.
@@ -19,6 +19,9 @@ import { IconBars, IconCards, IconPerson, IconSearch } from './Icons';
 
 const TABS = [
   { href: '/', label: 'Học', hue: 'violet', Icon: IconCards },
+  // Bộ thẻ đứng ngay sau Học: cùng nói về deck, chỉ khác là ở đây để sắp xếp
+  // chứ không phải để ôn.
+  { href: '/decks', label: 'Bộ thẻ', hue: 'indigo', Icon: IconStack },
   { href: '/lookup', label: 'Tra từ', hue: 'teal', Icon: IconSearch },
   { href: '/stats', label: 'Thống kê', hue: 'rose', Icon: IconBars },
   { href: '/account', label: 'Tài khoản', hue: 'blue', Icon: IconPerson },
@@ -34,9 +37,14 @@ export function TabBar() {
   const pathname = usePathname();
   if (HIDDEN.some((p) => pathname === p || pathname.startsWith(`${p}/`))) return null;
 
-  // /settings và /connect nằm dưới Tài khoản, nên tab đó sáng khi đang ở trong chúng
+  // /settings và /connect nằm dưới Tài khoản; /decks/[id] (danh sách thẻ trong một
+  // bộ) nằm dưới Bộ thẻ. Tab tương ứng sáng khi đang ở trong chúng.
   const activeHref =
-    pathname === '/settings' || pathname === '/connect' ? '/account' : pathname;
+    pathname === '/settings' || pathname === '/connect'
+      ? '/account'
+      : pathname.startsWith('/decks')
+        ? '/decks'
+        : pathname;
 
   return (
     <nav className="tabbar" aria-label="Điều hướng chính">
