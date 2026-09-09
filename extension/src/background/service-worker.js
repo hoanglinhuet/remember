@@ -9,8 +9,8 @@
 import { runChain } from './providers.js';
 import {
   FLUSH_ALARM, connectWithCode, createDeck, disconnect, flushOutbox, getDecks,
-  getExisting, getRecentCards, getRemoteFronts, getSettings, getStatus, hasToken,
-  refreshDecks, saveSettings, senseKey, setApiBase, syncAfterSave,
+  ensureCacheScope, getExisting, getRecentCards, getRemoteFronts, getSettings, getStatus,
+  hasToken, refreshDecks, saveSettings, senseKey, setApiBase, syncAfterSave,
 } from './sync.js';
 
 const STORE_KEY = 'cards';
@@ -22,6 +22,22 @@ const HL_KEY = 'highlightIndex';    // { fronts, at } — bộ từ để highli
 const HL_OFF_KEY = 'highlightOff';        // domain đã TẮT highlight (bản trên máy này)
 const HL_DIRTY_KEY = 'highlightOffDirty'; // bản trên máy này CHƯA đẩy lên server
 const HL_TTL_MS = 10 * 60_000;
+
+/**
+ * Cache của highlight gắn với MỘT tài khoản trên MỘT server, nên phải bị dọn khi
+ * danh tính đổi — xem `ensureCacheScope()`.
+ *
+ * `highlightOff`/`highlightOffDirty` được GIỮ khi đi từ "chưa ghép nối" sang một tài
+ * khoản thật: đó là thao tác người dùng đã bấm, và `flushHighlightOff()` sẽ đẩy nó
+ * lên tài khoản vừa nối. Mọi chuyển đổi khác (A → B, đổi server) thì bỏ, nếu không
+ * danh sách domain tắt của tài khoản A sẽ bị ghi vào cài đặt của tài khoản B.
+ */
+const HL_SCOPED_KEYS = [HL_KEY, HL_OFF_KEY, HL_DIRTY_KEY];
+
+const scopeGuard = () => ensureCacheScope({
+  alsoDrop: HL_SCOPED_KEYS,
+  keepFromLocal: [HL_OFF_KEY, HL_DIRTY_KEY],
+});
 
 /**
  * Chuẩn hoá host — PHẢI giống `normalizeHost()` ở apps/web/lib/domain/host.ts, nếu
@@ -122,10 +138,16 @@ async function clearBadge() {
  * người dùng có 2 thẻ mà cả chục từ cũ đã xoá vẫn sáng lên. Local ở đây là cache,
  * và cache không được quyền phủ quyết nguồn sự thật.
  *
- * Ngoại lệ duy nhất: thẻ local CHƯA đẩy lên được (`!c.synced` — lưu lúc mất mạng).
- * Chúng đã lưu thật theo góc nhìn người dùng, chỉ chưa kịp lên server.
+ * Ngoại lệ duy nhất: thẻ local CHƯA đẩy lên được (`!c.synced` — lưu lúc mất mạng,
+ * hoặc lưu khi chưa có tài khoản). Chúng đã lưu thật theo góc nhìn người dùng, chỉ
+ * chưa kịp lên server.
  *
- * Chưa ghép nối tài khoản thì local là kho duy nhất, dùng cả bộ.
+ * CHƯA GHÉP NỐI TÀI KHOẢN: chỉ tô những thẻ `!synced` — tức thẻ chưa thuộc về tài
+ * khoản nào. Bản trước dùng CẢ bộ local, và đó là lý do "chưa dán mã mà highlight đã
+ * hiện": thẻ từng đẩy lên một tài khoản (`synced: true`) vẫn nằm trong
+ * `chrome.storage.local` sau khi ngắt kết nối hay đổi môi trường, nên chúng sáng lên
+ * dù tài khoản hiện tại không có chúng. Thẻ đã đóng dấu `synced` thuộc về tài khoản
+ * đã nhận nó, không thuộc về trạng thái "chưa kết nối".
  *
  * Kết quả ghi vào storage thay vì trả riêng cho từng tab: một trang có thể có nhiều
  * frame, và content script đọc storage trực tiếp được, không phải đánh thức service
@@ -135,14 +157,27 @@ async function buildHighlightIndex() {
   const cards = await readCards();
   const frontOf = (c) => c.normalizedFront || normalize(c.front || '');
   const remote = await getRemoteFronts({ maxAgeMs: HL_TTL_MS });
+  const unsynced = cards.filter((c) => !c.synced).map(frontOf);
 
-  // `stale` mà vẫn có cache: mạng hỏng, dùng bản cache — vẫn đúng hơn local.
-  const authoritative = remote.connected && (!remote.stale || remote.fronts.length > 0);
-  const fronts = authoritative
-    ? [...remote.fronts, ...cards.filter((c) => !c.synced).map(frontOf)]
-    : cards.map(frontOf);
+  let fronts;
+  let source;
+  if (!remote.connected) {
+    // Chưa ghép nối: chỉ thẻ chưa thuộc tài khoản nào.
+    fronts = unsynced;
+    source = 'local-unsynced';
+  } else if (!remote.stale || remote.fronts.length > 0) {
+    // `stale` mà vẫn có cache: mạng hỏng, dùng bản cache — vẫn đúng hơn local.
+    fronts = [...remote.fronts, ...unsynced];
+    source = 'api';
+  } else {
+    // Đã ghép nối nhưng chưa lấy được gì (mất mạng ngay từ lần đầu): dùng cả bộ
+    // local. Những thẻ đó vốn được đẩy lên từ chính máy này, nên gần đúng nhất với
+    // dữ liệu của tài khoản đang kết nối.
+    fronts = cards.map(frontOf);
+    source = 'local-offline';
+  }
 
-  const index = { fronts: [...new Set(fronts.filter(Boolean))], at: Date.now(), source: authoritative ? 'api' : 'local' };
+  const index = { fronts: [...new Set(fronts.filter(Boolean))], at: Date.now(), source };
   await chrome.storage.local.set({ [HL_KEY]: index });
   return index;
 }
@@ -670,8 +705,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     sendResponse({ ok: false, error: `không rõ message: ${msg?.type}` });
     return false;
   }
+  // Dọn cache của danh tính cũ TRƯỚC mỗi handler. Đây là chỗ duy nhất mọi luồng đều
+  // đi qua, nên đặt ở đây thì không có đường nào đọc được cache của tài khoản/server
+  // khác — kể cả những luồng thêm về sau.
   // Trả true để giữ kênh mở cho phản hồi async.
-  Promise.resolve(handler(msg))
+  scopeGuard()
+    .catch(() => {})
+    .then(() => handler(msg))
     .then(sendResponse)
     .catch((e) => sendResponse({ ok: false, error: String(e?.message || e) }));
   return true;
@@ -695,6 +735,7 @@ chrome.runtime.onInstalled.addListener(() => {
   registerMenu();
   clearBadge();
   ensureDecks();
+  scopeGuard().catch(() => {});
   // Dựng lại bộ từ highlight NGAY, không chờ hết TTL: bản cũ trong storage có thể
   // được dựng bằng phiên bản trước (và bằng luật khác), nên sau khi cập nhật
   // extension nó vẫn còn tô những từ đã xoá.
@@ -704,6 +745,7 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   registerMenu();
   clearBadge();
+  scopeGuard().catch(() => {});
   buildHighlightIndex().catch(() => {});
   flushHighlightOff().catch(() => {});
   // Mở browser lại: có thể đã đăng nhập web từ lần trước, thử đẩy hàng chờ.

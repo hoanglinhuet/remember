@@ -178,5 +178,30 @@ await wait();
 eq('đã ghép nối: đúng 1 lượt POST /me', calls.mePost, 1);
 eq('đã ghép nối: server đã có', server.config.highlightOff, ['co-token.com']);
 
+// 13. BỘ TỪ ĐEM TÔ theo từng trạng thái kết nối.
+//     Ghim vì đây đúng là câu hỏi "chưa dán mã mà highlight đã hiện": thẻ đã đẩy lên
+//     một tài khoản (`synced: true`) vẫn nằm trong storage sau khi ngắt kết nối/đổi
+//     môi trường, và bản trước đem cả bộ đó ra tô.
+const mixed = [
+  { id: 'a', front: 'da-dong-bo', normalizedFront: 'da-dong-bo', back: ['x'], synced: true },
+  { id: 'b', front: 'chua-dong-bo', normalizedFront: 'chua-dong-bo', back: ['x'], synced: false },
+];
+
+reset({ cards: mixed });                       // chưa ghép nối (không có apiToken)
+r = await send('GET_HIGHLIGHT', { host: 'x.test' });
+eq('chưa ghép nối: CHỈ tô thẻ chưa thuộc tài khoản nào', r.fronts, ['chua-dong-bo']);
+eq('chưa ghép nối: nguồn = local-unsynced', bag.highlightIndex?.source, 'local-unsynced');
+
+reset({ apiToken: 'tok', cards: mixed });      // đã ghép nối, server trả 2 từ
+r = await send('GET_HIGHLIGHT', { host: 'x.test' });
+eq('đã ghép nối: server + thẻ chờ đẩy', [...r.fronts].sort(), ['book', 'give up', 'chua-dong-bo'].sort());
+eq('đã ghép nối: nguồn = api', bag.highlightIndex?.source, 'api');
+
+reset({ apiToken: 'tok', cards: mixed });      // đã ghép nối nhưng mất mạng ngay từ đầu
+serverUp = false;
+r = await send('GET_HIGHLIGHT', { host: 'x.test' });
+eq('mất mạng chưa có cache: dùng cả bộ local', [...r.fronts].sort(), ['da-dong-bo', 'chua-dong-bo'].sort());
+eq('mất mạng: nguồn = local-offline', bag.highlightIndex?.source, 'local-offline');
+
 console.log(`\ncalls: ${JSON.stringify(calls)}`);
 process.exit(bad ? 1 : 0);

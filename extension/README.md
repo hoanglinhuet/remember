@@ -35,6 +35,7 @@ Sau mỗi lần sửa code: bấm **Reload** ở trang extensions, rồi **F5 l�
 | FR-B3 — chống trùng theo `normalizedFront + langFrom` (gặp lại thì `×N`) | ✅ |
 | Menu chuột phải **"Translate with Remember"** → mở panel ở **góc trên bên phải** để chọn nghĩa (không còn lưu thẻ trống); không có content script thì lùi về lưu thô | ✅ |
 | **PDF**: bôi đen chạy trong viewer pdf.js (Firefox); trong viewer tích hợp của Chrome thì dùng menu chuột phải — plugin PDF không cho content script đọc vùng chọn | ✅ |
+| Bộ từ đem tô: **đã ghép nối** → thẻ trên tài khoản + thẻ chờ đẩy · **chưa ghép nối** → chỉ thẻ chưa thuộc tài khoản nào (`!synced`) · **mất mạng chưa có cache** → cả bộ local. Cache gắn theo `apiBase#userId`, đổi môi trường là dọn | ✅ |
 | **Tự phát âm** ngay khi kết quả dịch hiện ra (không cần bấm nút loa); đoạn dài hơn 60 ký tự thì im, nút loa vẫn đọc mọi độ dài | ✅ |
 | Kiểm trùng khi lưu **hỏi server** (khoá: từ + loại từ + bộ nghĩa + cặp ngôn ngữ, y hệt index `cards_dedupe`); local chỉ dùng khi chưa ghép nối hoặc mất mạng, và thẻ local đã đồng bộ mà server không còn thì bị dọn | ✅ |
 | **Highlight từ đã lưu ngay trên trang** (CSS Custom Highlight API — không sửa DOM của trang) | ✅ |

@@ -41,6 +41,9 @@ export async function claimPairing(db: Database, code: string, label: string | n
   return {
     token: session.token,
     expiresAt: session.expiresAt.toISOString(),
-    user: user ? { name: user.name, email: user.email } : null,
+    // `id` là thứ extension dùng để gắn cache vào đúng tài khoản (xem `cacheScope()`
+    // ở extension/src/background/sync.js). Thiếu nó thì extension chỉ biết "đã kết
+    // nối" mà không biết với AI, và cache của tài khoản cũ sẽ trôi sang tài khoản mới.
+    user: user ? { id: user.id, name: user.name, email: user.email } : null,
   };
 }

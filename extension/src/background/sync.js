@@ -23,7 +23,14 @@ const DECKS_KEY = 'deckCache';
 const FRONTS_KEY = 'frontsCache';
 const SETTINGS_KEY = 'settingsCache';
 const OUTBOX_KEY = 'outbox';
+const SCOPE_KEY = 'cacheScope';
 const FLUSH_ALARM = 'remember-flush';
+
+/**
+ * Cache thuộc về MỘT tài khoản trên MỘT server. Đổi server hay đổi tài khoản là
+ * chúng vô giá trị — và tệ hơn: dùng tiếp là lẫn dữ liệu giữa hai môi trường.
+ */
+const ACCOUNT_CACHES = [DECKS_KEY, FRONTS_KEY, SETTINGS_KEY];
 
 // ------------------------------------------------------------------ cấu hình
 
@@ -37,8 +44,65 @@ export async function setApiBase(url) {
   if (!/^https?:\/\/[^/]+$/i.test(clean)) throw new Error('URL không hợp lệ');
   // Đổi server thì token cũ vô nghĩa — xoá luôn để không hiện trạng thái sai.
   await chrome.storage.local.set({ [BASE_KEY]: clean });
-  await chrome.storage.local.remove([TOKEN_KEY, USER_KEY, DECKS_KEY]);
+  await chrome.storage.local.remove([TOKEN_KEY, USER_KEY, ...ACCOUNT_CACHES]);
   return clean;
+}
+
+/**
+ * Danh tính hiện tại của cache: **server nào + user nào**.
+ *
+ * Không có tầng này thì mọi cache nằm dưới một key cố định trong
+ * `chrome.storage.local`, và chuyển giữa hai môi trường (dev ↔ production, hoặc hai
+ * tài khoản) sẽ dùng lại cache của bên kia: bộ từ highlight của môi trường cũ, cài
+ * đặt của tài khoản cũ — và nguy hiểm nhất là danh sách domain tắt highlight còn
+ * "chờ đẩy" của tài khoản A bị đẩy lên tài khoản B.
+ */
+export async function cacheScope() {
+  const base = await getApiBase();
+  const bag = await chrome.storage.local.get([TOKEN_KEY, USER_KEY]);
+  if (!bag[TOKEN_KEY]) return `${base}#local`;
+  return `${base}#${bag[USER_KEY]?.id ?? 'unknown'}`;
+}
+
+/**
+ * Dọn cache khi danh tính đã đổi. Gọi TRƯỚC mọi lần đọc cache.
+ *
+ * `alsoDrop`: key do service worker quản (bộ từ highlight, danh sách domain tắt).
+ * `keepFromLocal`: key được GIỮ khi đi từ "chưa ghép nối" sang một tài khoản thật —
+ * thao tác người dùng đã bấm lúc chưa có tài khoản phải theo lên tài khoản đó, chứ
+ * không bị xoá (xem `flushHighlightOff()`).
+ *
+ * Lần chạy đầu tiên (chưa có dấu scope nào) chỉ ĐÓNG DẤU, không xoá gì: cache lúc đó
+ * là của chính danh tính hiện tại, do bản trước để lại.
+ */
+export async function ensureCacheScope({ alsoDrop = [], keepFromLocal = [] } = {}) {
+  const scope = await cacheScope();
+  const bag = await chrome.storage.local.get(SCOPE_KEY);
+  const before = bag[SCOPE_KEY];
+  if (before === scope) return { changed: false, scope };
+
+  // `#unknown` -> `#<id>` trên CÙNG server không phải đổi tài khoản, chỉ là biết
+  // thêm nó là ai: bản đã ghép nối từ trước lưu `apiUser` chưa có `id` (server cũ
+  // không trả), và `/me` mới điền vào sau. Coi đây là đổi danh tính thì mỗi lần cập
+  // nhật extension sẽ xoá cache oan một lượt — kể cả thay đổi đang chờ đẩy.
+  const refinedSameAccount = typeof before === 'string'
+    && before.endsWith('#unknown')
+    && scope.startsWith(before.slice(0, -'#unknown'.length));
+
+  if (typeof before === 'string' && !refinedSameAccount) {
+    const fromLocal = before.endsWith('#local');
+    const toAccount = !scope.endsWith('#local');
+    const keep = fromLocal && toAccount ? keepFromLocal : [];
+    const drop = [...ACCOUNT_CACHES, ...alsoDrop].filter((k) => !keep.includes(k));
+    await chrome.storage.local.remove(drop);
+  }
+
+  await chrome.storage.local.set({ [SCOPE_KEY]: scope });
+  return {
+    changed: typeof before === 'string' && !refinedSameAccount,
+    scope,
+    from: before ?? null,
+  };
 }
 
 async function getToken() {
@@ -77,8 +141,9 @@ async function call(path, init = {}) {
   }
 
   if (res.status === 401) {
-    // Token bị thu hồi hoặc hết hạn: xoá để UI hiện "cần kết nối lại".
-    await chrome.storage.local.remove([TOKEN_KEY, USER_KEY]);
+    // Token bị thu hồi hoặc hết hạn: xoá để UI hiện "cần kết nối lại", và bỏ luôn
+    // cache của tài khoản đó — nó không còn quyền gì để nói về dữ liệu này.
+    await chrome.storage.local.remove([TOKEN_KEY, USER_KEY, ...ACCOUNT_CACHES]);
     return { ok: false, reason: 'unauthorized', status: 401 };
   }
 
@@ -113,6 +178,13 @@ export async function connectWithCode(rawCode) {
   }
 
   await chrome.storage.local.set({ [TOKEN_KEY]: body.token, [USER_KEY]: body.user ?? null });
+  // Đổi tài khoản/server: bỏ cache của danh tính cũ NGAY, đừng để lượt đọc kế tiếp
+  // trả về dữ liệu của bên kia. `highlightOff` được giữ nếu trước đó là trạng thái
+  // "chưa ghép nối" — nó sẽ được đẩy lên tài khoản vừa nối.
+  await ensureCacheScope({
+    alsoDrop: ['highlightIndex', 'highlightOff', 'highlightOffDirty'],
+    keepFromLocal: ['highlightOff', 'highlightOffDirty'],
+  });
   // Kéo deck về ngay để panel có gì mà chọn.
   await refreshDecks();
   // Đẩy luôn những thẻ đã lưu trước khi kết nối.
@@ -120,7 +192,10 @@ export async function connectWithCode(rawCode) {
 }
 
 export async function disconnect() {
-  await chrome.storage.local.remove([TOKEN_KEY, USER_KEY, DECKS_KEY]);
+  await chrome.storage.local.remove([TOKEN_KEY, USER_KEY, ...ACCOUNT_CACHES]);
+  // Ngắt kết nối là về trạng thái "chưa ghép nối": bộ từ và danh sách domain tắt của
+  // tài khoản vừa rời KHÔNG được ở lại.
+  await ensureCacheScope({ alsoDrop: ['highlightIndex', 'highlightOff', 'highlightOffDirty'] });
 }
 
 /**

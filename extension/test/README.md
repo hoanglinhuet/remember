@@ -9,13 +9,14 @@ node extension/test/highlight-matcher.test.mjs   # khớp từ: cụm/từ đơn
 node extension/test/popup-scripts.test.mjs       # popup.js có thật sự chạy được không
 node extension/test/context-menu.test.mjs        # menu chuột phải: đúng frame, và lùi về lưu thô khi cần
 node extension/test/save-dedupe.test.mjs         # kiểm trùng khi lưu: nguồn nào, khoá nào
+node extension/test/cache-scope.test.mjs         # đổi server/tài khoản: cache không được trôi sang
 ```
 
 Exit code khác 0 = có case FAIL.
 
 ## Vì sao có mấy file này
 
-Sáu file, và cả sáu đều tồn tại vì **cùng một lỗi quay lại nhiều lần**: tắt highlight mà
+Bảy file, và cả bảy đều tồn tại vì **cùng một lỗi quay lại nhiều lần**: tắt highlight mà
 trang vẫn còn màu. Nguyên nhân không nằm ở một dòng code sai mà ở *trạng thái*: bộ từ lấy
 từ nguồn nào, ai là nguồn sự thật, và một content script bị vô hiệu hoá thì để lại gì
 trên trang. Đó là loại lỗi không đọc ra được, phải chạy mới thấy.
