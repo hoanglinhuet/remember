@@ -17,6 +17,14 @@
   // và Service Worker → Inspect cho biết bản nào vừa được nạp.
 
   const MAX_CARD_LEN = 200; // FR-A1: dài hơn thì chỉ tra, không cho làm thẻ
+  /**
+   * Ngưỡng TỰ phát âm. Dài hơn thì phải bấm nút loa.
+   *
+   * Bôi đen một câu rồi bị đọc to nguyên câu là quấy rầy chứ không phải tiện — nhất
+   * là khi đang đọc ở chỗ công cộng. Một từ hay một cụm ngắn thì ngược lại: nghe ngay
+   * lúc vừa thấy nghĩa là lúc não gắn âm với nghĩa tốt nhất.
+   */
+  const AUTO_SPEAK_MAX = 60;
   const ICON_SIZE = 28;
   const GAP = 6;
   const ICON_IN = 160;  // ms - phải khớp với transition trong STYLES
@@ -1069,6 +1077,7 @@
       if (res?.ok && res.result?.groups?.length) {
         lookupResult = res.result;
         renderResult(res.result);
+        autoSpeak();
       } else {
         renderLookupError(res);
       }
@@ -1079,6 +1088,30 @@
   }
 
   // --------------------------------------------------------------------- TTS
+
+  /**
+   * Phát âm NGAY khi kết quả dịch hiện ra, không cần bấm nút loa.
+   *
+   * Chạy được dù browser chặn autoplay: panel chỉ mở sau một cú click vào icon hoặc
+   * một lần bấm menu chuột phải, nên đã có tương tác của người dùng đứng trước —
+   * autoplay policy chỉ chặn audio không có tương tác nào trước đó.
+   *
+   * Đọc `current.text` (từ gốc), KHÔNG đọc nghĩa tiếng Việt: cái cần nhớ cách đọc là
+   * từ đó. Gọi SAU `renderResult` để `lookupResult.detectedLang` đã có — nếu không
+   * `speakTerm()` sẽ đoán ngôn ngữ và đọc từ tiếng Anh bằng giọng Việt.
+   *
+   * Ba điều kiện, cả ba đều để tránh phát ra tiếng vào lúc không ai muốn:
+   *  - panel còn đang mở (kết quả về muộn sau khi đã đóng thì im);
+   *  - có nút loa trong panel (dùng lại nó để hiện trạng thái đang phát);
+   *  - đoạn chọn ngắn hơn `AUTO_SPEAK_MAX`.
+   */
+  function autoSpeak() {
+    if (!current || !root || panel.dataset.open !== '1') return;
+    if (current.text.length > AUTO_SPEAK_MAX) return;
+    const btn = panel.querySelector('.speak');
+    if (!btn) return;
+    speakTerm(btn);
+  }
 
   /**
    * Ưu tiên giọng của translate.google.com (nữ, tự nhiên) qua service worker;

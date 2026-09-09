@@ -35,6 +35,7 @@ Sau mỗi lần sửa code: bấm **Reload** ở trang extensions, rồi **F5 l�
 | FR-B3 — chống trùng theo `normalizedFront + langFrom` (gặp lại thì `×N`) | ✅ |
 | Menu chuột phải **"Translate with Remember"** → mở panel ở **góc trên bên phải** để chọn nghĩa (không còn lưu thẻ trống); không có content script thì lùi về lưu thô | ✅ |
 | **PDF**: bôi đen chạy trong viewer pdf.js (Firefox); trong viewer tích hợp của Chrome thì dùng menu chuột phải — plugin PDF không cho content script đọc vùng chọn | ✅ |
+| **Tự phát âm** ngay khi kết quả dịch hiện ra (không cần bấm nút loa); đoạn dài hơn 60 ký tự thì im, nút loa vẫn đọc mọi độ dài | ✅ |
 | **Highlight từ đã lưu ngay trên trang** (CSS Custom Highlight API — không sửa DOM của trang) | ✅ |
 | Bật/tắt highlight **theo từng tên miền** trong popup; mặc định bật, chỉ trạng thái tắt được lưu (vào `users.settings.highlightOff` ở DB, nên đồng bộ giữa các máy) | ✅ |
 | Popup chỉ còn: trạng thái tài khoản · công tắc highlight · xuất dữ liệu. **Danh sách thẻ đã bỏ** — quản lý thẻ ở web app (`/decks`), nơi có tìm kiếm và phân trang | ✅ |

@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { api, ApiFail } from '@/lib/client/api';
 import { lookup, POS_LABEL, type LookupResult, type SenseGroup } from '@/lib/client/lookup';
 import { speak } from '@/lib/client/speech';
+
+/** Ngưỡng tự phát âm — giữ bằng `AUTO_SPEAK_MAX` của extension để hai nơi giống nhau. */
+const AUTO_SPEAK_MAX = 60;
 import { IconSpeaker } from '../_components/Icons';
 import { senseKey } from '@/lib/domain/day';
 import type { ExistingCard } from '@/lib/ports/queries';
@@ -135,6 +138,11 @@ export default function LookupClient({ decks }: { decks: { id: string; name: str
         setPicked(new Set([first.gloss]));
         setPickedPos(g.pos);
       }
+      // Phát âm ngay khi có kết quả, không cần bấm nút loa. Gọi được vì lượt tra
+      // luôn bắt đầu từ một cú bấm/Enter của người dùng — autoplay policy chỉ chặn
+      // audio không có tương tác nào đứng trước. Dài hơn AUTO_SPEAK_MAX thì im: bị
+      // đọc to nguyên đoạn là quấy rầy, và nút loa vẫn đọc mọi độ dài.
+      if (text.length <= AUTO_SPEAK_MAX) speak(text, r.result.detectedLang);
     } else {
       setErr(r.attempts.map((a) => `${a.id}: ${a.reason}`).join(' · ') || 'không tra được');
     }

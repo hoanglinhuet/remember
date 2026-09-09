@@ -23,7 +23,7 @@ là **bắt buộc** (nếu không, anon key công khai đọc được `session
 **Đã làm được:** **highlight từ đã lưu ngay trên trang đang đọc** (extension, tắt được trong
 popup) · quản lý trên web: bộ thẻ **thêm · đổi tên · xoá** (xoá bộ thì chọn dồn thẻ
 sang bộ khác hay xoá luôn), thẻ trong bộ **xem · tìm · xoá** · bắt từ bằng cách bôi đen (icon nổi, panel có IPA + loại từ tiếng Việt + dịch ngược
-+ giọng nữ Google) · deck và danh sách thẻ **lấy qua API** · dedupe theo *từ + loại từ + nghĩa Việt*,
++ giọng nữ Google, **tự phát âm ngay khi có kết quả**) · deck và danh sách thẻ **lấy qua API** · dedupe theo *từ + loại từ + nghĩa Việt*,
 hiện "đã lưu" ngay lúc tra · đăng nhập Google **tự làm** (PKCE + session token riêng, không qua
 Supabase Auth) · extension kết nối tài khoản bằng **mã ghép nối** · phiên ôn FSRS **theo đúng cơ chế
 Anki** (hàng đợi động, learn-ahead, hạn mức theo ngày, day cutoff 4:00, leech) · bậc độ nhớ 1–5 ·
