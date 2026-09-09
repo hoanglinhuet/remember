@@ -10,7 +10,7 @@ import { runChain } from './providers.js';
 import {
   FLUSH_ALARM, connectWithCode, createDeck, disconnect, flushOutbox, getDecks,
   getExisting, getRecentCards, getRemoteFronts, getSettings, getStatus, hasToken,
-  refreshDecks, saveSettings, setApiBase, syncAfterSave,
+  refreshDecks, saveSettings, senseKey, setApiBase, syncAfterSave,
 } from './sync.js';
 
 const STORE_KEY = 'cards';
@@ -274,30 +274,92 @@ async function setHighlightForHost(host, on) {
   };
 }
 
+/**
+ * Thẻ này đã tồn tại chưa? (FR-B3)
+ *
+ * KHOÁ: *từ + loại từ + bộ nghĩa + cặp ngôn ngữ* — y hệt index `cards_dedupe` ở
+ * server. Bản trước chỉ so *từ + langFrom*, nên `book` (danh từ) và `book` (động từ)
+ * bị coi là một, và nghĩa thứ hai của cùng một từ không bao giờ lưu được.
+ *
+ * NGUỒN: server khi đã ghép nối. `chrome.storage.local` giữ MỌI thẻ từng lưu từ
+ * browser này và KHÔNG bị xoá khi người dùng xoá thẻ trên web — nên hỏi local là
+ * cách chắc chắn để báo "đã tồn tại trong deck X" về một thẻ không còn tồn tại.
+ * Đúng lỗi đã gặp: web không thấy thẻ nào mà extension vẫn báo trùng.
+ *
+ * Thẻ local CHƯA đẩy lên (`!synced`) vẫn tính là trùng: người dùng đã lưu nó thật,
+ * chỉ là server chưa biết.
+ *
+ * Trả `{ deckName, stale }` — `stale` là danh sách thẻ local đã đồng bộ nhưng server
+ * không còn: chúng là bóng của thẻ đã xoá, và người gọi phải dọn.
+ */
+async function findDuplicate({ front, pos, back, langFrom, langTo, cards, decks }) {
+  const normalizedFront = normalize(front);
+  const key = senseKey(back);
+  const samePos = (a, b) => (a ?? '') === (b ?? '');
+
+  const localMatches = cards.filter(
+    (c) => c.normalizedFront === normalizedFront
+      && samePos(c.pos, pos)
+      && senseKey(c.back) === key
+      && c.langFrom === langFrom
+      && (c.langTo || 'vi') === langTo,
+  );
+  const deckNameOf = (card) => decks.find((d) => d.id === card?.deckId)?.name || '';
+
+  const remote = await getExisting(front, langFrom, langTo);
+  if (remote.ok) {
+    const hit = remote.cards.find((c) => samePos(c.pos, pos) && c.backKey === key);
+    if (hit) return { duplicate: true, deckName: hit.deckName || '', stale: [] };
+
+    // Server nói KHÔNG có. Thẻ local đã đồng bộ mà server không còn ⇒ đã bị xoá ở
+    // nơi khác; dọn đi thay vì để nó chặn lượt lưu này.
+    const pending = localMatches.find((c) => !c.synced);
+    if (pending) return { duplicate: true, deckName: deckNameOf(pending), stale: [] };
+    return { duplicate: false, stale: localMatches.filter((c) => c.synced) };
+  }
+
+  // Chưa ghép nối hoặc mất mạng: local là tất cả những gì có.
+  const hit = localMatches[0];
+  return hit
+    ? { duplicate: true, deckName: deckNameOf(hit), local: hit, stale: [] }
+    : { duplicate: false, stale: [] };
+}
+
 async function saveCard(payload) {
   const front = String(payload?.front ?? '').trim();
   if (!front) return { ok: false, error: 'thiếu nội dung' };
 
   const normalizedFront = normalize(front);
   const langFrom = payload.langFrom || 'auto';
-  const cards = await readCards();
+  const langTo = payload.langTo || 'vi';
+  const back = Array.isArray(payload.back) ? payload.back : [];
+  let cards = await readCards();
 
   // Deck: theo yêu cầu người dùng, mặc định là deck ĐẦU TIÊN.
   const decks = await ensureDecks();
   const deckId = decks.some((d) => d.id === payload.deckId) ? payload.deckId : decks[0].id;
 
-  const existing = cards.find(
-    (c) => c.normalizedFront === normalizedFront && c.langFrom === langFrom,
-  );
-  if (existing) {
+  const dup = await findDuplicate({
+    front, pos: payload.pos || null, back, langFrom, langTo, cards, decks,
+  });
+
+  if (dup.duplicate) {
     // M1 sẽ mở hộp thoại gộp nghĩa; M0 chỉ cập nhật thời điểm gặp lại.
-    existing.seenCount = (existing.seenCount || 1) + 1;
-    existing.updatedAt = new Date().toISOString();
-    await chrome.storage.local.set({ [STORE_KEY]: cards });
-    // Dedupe theo front + ngôn ngữ trên TOÀN BỘ thẻ (FR-B3), không theo từng deck
-    // -> nói rõ thẻ cũ đang ở deck nào để người dùng không tưởng là lưu thất bại.
-    const deckName = decks.find((d) => d.id === existing.deckId)?.name || '';
-    return { ok: true, duplicate: true, total: cards.length, deckName };
+    if (dup.local) {
+      dup.local.seenCount = (dup.local.seenCount || 1) + 1;
+      dup.local.updatedAt = new Date().toISOString();
+      await chrome.storage.local.set({ [STORE_KEY]: cards });
+    }
+    // Dedupe trên TOÀN BỘ thẻ (FR-B3), không theo từng deck -> nói rõ thẻ cũ đang ở
+    // deck nào để người dùng không tưởng là lưu thất bại.
+    return { ok: true, duplicate: true, total: cards.length, deckName: dup.deckName };
+  }
+
+  // Bóng của thẻ đã xoá ở nơi khác: bỏ khỏi bản local trước khi thêm thẻ mới, nếu
+  // không danh sách local sẽ có hai bản cùng khoá.
+  if (dup.stale.length) {
+    const ghosts = new Set(dup.stale.map((c) => c.id));
+    cards = cards.filter((c) => !ghosts.has(c.id));
   }
 
   const now = new Date().toISOString();
@@ -305,12 +367,12 @@ async function saveCard(payload) {
     id: crypto.randomUUID(),
     front,
     normalizedFront,
-    back: Array.isArray(payload.back) ? payload.back : [],
+    back,
     reading: payload.reading || '',        // phiên âm, không kèm dấu //
     readingType: payload.readingType || null, // 'ipa' | 'translit'
     pos: payload.pos || null,              // loại từ của nghĩa đã chọn
     langFrom,
-    langTo: payload.langTo || 'vi',
+    langTo,
     contextSentence: payload.contextSentence || '',
     sourceUrl: payload.sourceUrl || '',
     sourceTitle: payload.sourceTitle || '',
