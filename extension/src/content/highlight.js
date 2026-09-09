@@ -29,7 +29,9 @@
   // qua trong im lặng: phần bắt từ của extension vẫn chạy đầy đủ, chỉ là không tô.
   const supported = typeof CSS !== 'undefined' && 'highlights' in CSS
     && typeof Highlight === 'function';
-  if (!supported) return;
+  if (!supported) {
+    return;
+  }
 
   /** Thẻ không chứa văn bản để đọc, hoặc chứa văn bản người dùng đang sửa. */
   const SKIP_TAGS = new Set([
@@ -38,6 +40,12 @@
   ]);
 
   let regex = null;
+  /** Trang này có được tô hay không — quyết định theo domain, mặc định là có. */
+  let enabled = true;
+  /** Timer debounce của MutationObserver. */
+  let timer = 0;
+  /** @type {MutationObserver|null} — khai báo sớm vì `die()` phải ngắt được nó. */
+  let observer = null;
 
   // -------------------------------------------------------------- style
 
@@ -140,8 +148,33 @@
     return ranges;
   }
 
+  /** Xoá sạch phần đã tô. Gọi khi tắt theo domain, hoặc khi bộ từ thành rỗng. */
+  function clear() {
+    clearTimeout(timer);
+    regex = null;
+    enabled = false;
+    // Ghi một Highlight RỖNG trước khi xoá: `set` với 0 range chắc chắn buộc trình
+    // duyệt vẽ lại vùng đang tô, nên nếu `delete` một mình không kích hoạt vẽ lại
+    // thì màu vẫn mất. Hai lời gọi này gần như không tốn gì, và đổi lại là không có
+    // đường nào để "đã tắt mà vẫn còn màu".
+    try {
+      CSS.highlights.set(NAME, new Highlight());
+    } catch { /* trình duyệt cũ không nhận Highlight rỗng — bỏ qua, delete là đủ */ }
+    CSS.highlights.delete(NAME);
+  }
+
+  /**
+   * Dọn và NGHỈ HẲN: dùng khi context extension đã chết. Không chỉ xoá màu mà còn
+   * ngắt observer, vì một bản script không liên lạc được thì mọi thứ nó vẽ thêm đều
+   * là rác không ai tắt được.
+   */
+  function die() {
+    clear();
+    observer?.disconnect();
+  }
+
   function paint() {
-    if (!document.body) return;
+    if (!enabled || !document.body) return;
     const ranges = collectRanges();
     if (!ranges.length) {
       CSS.highlights.delete(NAME);
@@ -150,8 +183,8 @@
     CSS.highlights.set(NAME, new Highlight(...ranges));
   }
 
-  let timer = 0;
   function schedule() {
+    if (!enabled) return;
     clearTimeout(timer);
     timer = setTimeout(paint, DEBOUNCE_MS);
   }
@@ -159,21 +192,37 @@
   // ----------------------------------------------------------------- vòng đời
 
   /**
-   * Nguồn dữ liệu là service worker (nó gộp thẻ local với thẻ trên API rồi cache).
-   * Hỏi một lần lúc trang mở; những lần đổi sau tới qua storage.onChanged.
+   * Hỏi service worker: DOMAIN NÀY có tô không, và tô từ nào.
+   *
+   * Một message duy nhất cho cả hai câu hỏi, và bên kia trả lời từ cache — nên mở
+   * trang không phải chờ mạng. Những lần đổi sau tới qua `storage.onChanged`.
    */
   async function load() {
+    // `chrome.runtime.id` biến mất khi context bị vô hiệu hoá (vừa Reload extension
+    // trong lúc tab này vẫn mở). Bản script cũ đó không nghe được message hay
+    // storage nữa — nếu không tự dọn thì phần đã tô ĐỨNG NGUYÊN trên trang và không
+    // cách nào tắt được, kể cả bấm công tắc. Đó là đúng lỗi "tắt mà không tắt".
+    if (!chrome.runtime?.id) {
+      return die();
+    }
+
     let res;
     try {
-      res = await chrome.runtime.sendMessage({ type: 'GET_HIGHLIGHT' });
-    } catch {
-      return; // extension vừa reload -> context cũ mất hiệu lực, không phải lỗi
+      res = await chrome.runtime.sendMessage({
+        type: 'GET_HIGHLIGHT',
+        payload: { host: location.hostname },
+      });
+    } catch (e) {
+      return die();
     }
+
     if (!res?.ok || !res.on || !res.fronts?.length) {
-      CSS.highlights.delete(NAME);
-      regex = null;
+      clear();
       return;
     }
+    // Bật lại SAU khi đã biết là on: `clear()` đặt `enabled = false`, nên gán trước
+    // rồi mới kiểm tra sẽ để lại trạng thái bật khi thực ra phải tắt.
+    enabled = true;
     regex = buildRegex(res.fronts);
     paint();
   }
@@ -181,16 +230,38 @@
   installStyle();
   load();
 
-  // Bộ từ đổi (lưu thêm thẻ, xoá thẻ, bật/tắt trong popup) — service worker ghi lại
-  // storage, mọi tab đang mở nghe được ngay, không cần chờ tải lại trang.
+  // Kênh TRỰC TIẾP từ popup: bấm công tắc là áp dụng ngay, không đợi storage event.
+  // Trả lời `{ok:true}` cũng chính là cách popup biết tab này có content script còn
+  // sống — không trả lời nghĩa là tab đang chạy bản cũ và cần F5.
+  chrome.runtime?.onMessage?.addListener((msg, _sender, reply) => {
+    if (msg?.type !== 'HIGHLIGHT_CHANGED') return false;
+    load();
+    // Trả lời để popup biết tab này CÓ content script còn sống. Tab im lặng nghĩa là
+    // nó đang chạy bản cũ và cần F5 — popup nói đúng câu đó.
+    reply({ ok: true });
+    return false;
+  });
+
+  // Bộ từ hoặc danh sách domain tắt đổi (lưu thẻ, xoá thẻ, bấm công tắc trong popup,
+  // hoặc lượt làm mới nền thấy server có bản khác) — service worker ghi storage, mọi
+  // tab đang mở nghe được ngay, không cần F5.
   chrome.storage?.onChanged?.addListener((changes, area) => {
     if (area !== 'local') return;
-    if (changes.highlightIndex || changes.highlightOn) load();
+    if (changes.highlightIndex || changes.highlightOff) {
+      load();
+    }
+  });
+
+  // Quay lại tab: hỏi lại một lần. Đây là lưới an toàn cho trường hợp `storage
+  // .onChanged` không tới được (tab bị treo/đóng băng, hoặc content script này là
+  // bản cũ còn sống trong tab mở từ trước lần Reload extension).
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') load();
   });
 
   // Trang tự thêm nội dung (SPA, lazy-load, infinite scroll): quét lại, có debounce.
   // Bỏ qua thay đổi do chính extension gây ra để không tự kích hoạt vòng lặp.
-  const observer = new MutationObserver((records) => {
+  observer = new MutationObserver((records) => {
     if (!regex) return;
     for (const r of records) {
       const target = r.target?.nodeType === 1 ? r.target : r.target?.parentElement;

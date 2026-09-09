@@ -187,6 +187,7 @@ buộc phải vượt RLS (xoá tài khoản, job dọn).
 | `PATCH /v1/cards/{id}` | web | sửa thẻ. Chỉ field CÓ MẶT trong body bị ghi (`null` = xoá giá trị); đổi `front`/`pos`/`back` là đổi khoá dedupe nên có thể trả `409` |
 | `DELETE /v1/cards/{id}` | web | xoá **mềm**: giữ `card_states` + `review_logs`, và không chặn việc lưu lại đúng từ đó về sau |
 | `GET  /v1/cards/fronts` | **extension highlight** | mọi từ đã lưu, dạng chuẩn hoá, không trùng — một cột duy nhất. Cả bộ (không phân trang) vì extension cache theo TTL 10 phút; `/cards/list` không thay được: nó chỉ 50 thẻ gần nhất và kéo về cả nghĩa/IPA/deck |
+| `GET/POST /v1/me` → `config.highlightOff` | **extension highlight** | danh sách tên miền TẮT highlight. Mặc định là BẬT nên chỉ lưu **ngoại lệ** — tắt ở máy này thì máy khác cũng tắt. **Không có bảng riêng**: đây là cài đặt người dùng nên nằm trong cột `users.settings` (JSONB), cùng chỗ với `maxNew`/`modes`/… — xem nhanh bằng `select settings->'highlightOff' from users where email = '…';`. Server chuẩn hoá host (bỏ `www.`, bỏ scheme/path/port) và cắt trần 500 mục |
 | `POST /v1/cards/batch` | extension flush outbox | tối đa 200 thẻ/lần |
 | `GET  /v1/study/queue?deck=&limit=` | web | hàng đợi phiên: `cards ⨝ card_states`, đã áp day cutoff + hạn mức ngày |
 | **`POST /v1/study/answer`** | web | nhận `{cardId, rating, answeredAt}` → **server tính FSRS** (ADR-26) → ghi `card_states` + `review_logs` trong một transaction |

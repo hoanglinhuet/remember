@@ -21,6 +21,7 @@ const TOKEN_KEY = 'apiToken';
 const USER_KEY = 'apiUser';
 const DECKS_KEY = 'deckCache';
 const FRONTS_KEY = 'frontsCache';
+const SETTINGS_KEY = 'settingsCache';
 const OUTBOX_KEY = 'outbox';
 const FLUSH_ALARM = 'remember-flush';
 
@@ -54,7 +55,11 @@ async function getToken() {
 async function call(path, init = {}) {
   const base = await getApiBase();
   const token = await getToken();
-  if (!token) return { ok: false, reason: 'no_token' };
+  if (!token) {
+    // Không có token thì KHÔNG có request nào được gửi — đây là lý do "bấm mà không
+    // thấy call API" khi chưa ghép nối tài khoản.
+    return { ok: false, reason: 'no_token' };
+  }
 
   let res;
   try {
@@ -234,6 +239,70 @@ export async function getRemoteFronts({ maxAgeMs = 10 * 60_000 } = {}) {
   const fronts = (res.body?.fronts ?? []).map(String).filter(Boolean);
   await chrome.storage.local.set({ [FRONTS_KEY]: { fronts, at: Date.now() } });
   return { connected: true, fronts, stale: false };
+}
+
+/**
+ * Cài đặt của người dùng, lấy từ `GET /v1/me` — trong đó có `highlightOff`
+ * (danh sách domain đã TẮT highlight).
+ *
+ * STALE-WHILE-REVALIDATE, và đây là điểm chính của hàm này: người gọi luôn nhận
+ * được câu trả lời ngay từ cache, còn lượt gọi API (nếu cache đã cũ) chạy nền rồi
+ * ghi lại cache. Highlight quyết định BẬT/TẮT ở mỗi lần mở trang — chờ mạng ở đó
+ * nghĩa là mỗi trang phải chờ một round trip, và mất mạng thì không tô được gì.
+ *
+ * `onFresh` được gọi khi lượt làm mới nền cho ra dữ liệu KHÁC cache (để service
+ * worker phát tín hiệu cho các tab đang mở).
+ */
+export async function getSettings({ maxAgeMs = 10 * 60_000, onFresh } = {}) {
+  // Chưa ghép nối thì không có gì để gọi: trả về ngay, kèm lý do. Nếu cứ gọi `call()`
+  // thì nó cũng chỉ trả `no_token` — nhưng bên gọi sẽ không phân biệt được "không có
+  // API nào được gọi vì chưa đăng nhập" với "gọi rồi mà mạng hỏng".
+  if (!(await getToken())) return { config: null, stale: true, reason: 'no_token' };
+
+  const bag = await chrome.storage.local.get(SETTINGS_KEY);
+  const cached = bag[SETTINGS_KEY];
+  const fresh = cached && Date.now() - cached.at < maxAgeMs;
+
+  const refresh = async () => {
+    const res = await call('/me');
+    if (!res.ok) return null;
+    const config = res.body?.config ?? null;
+    if (!config) return null;
+    await chrome.storage.local.set({ [SETTINGS_KEY]: { config, at: Date.now() } });
+    return config;
+  };
+
+  if (fresh) return { config: cached.config, stale: false };
+
+  // Chưa có cache: phải chờ, vì không có gì để trả về.
+  if (!cached) {
+    const config = await refresh();
+    return config ? { config, stale: false } : { config: null, stale: true };
+  }
+
+  // Có cache cũ: trả ngay, làm mới ở nền.
+  refresh()
+    .then((config) => {
+      if (config && onFresh && JSON.stringify(config) !== JSON.stringify(cached.config)) {
+        onFresh(config);
+      }
+    })
+    .catch(() => {});
+  return { config: cached.config, stale: true };
+}
+
+/** Đã ghép nối tài khoản chưa — để UI nói đúng vì sao một thay đổi chưa lên server. */
+export async function hasToken() {
+  return Boolean(await getToken());
+}
+
+/** Ghi một phần cài đặt lên server, rồi cập nhật cache bằng bản server trả về. */
+export async function saveSettings(patch) {
+  const res = await call('/me', { method: 'POST', body: JSON.stringify(patch) });
+  if (!res.ok) return { ok: false, reason: res.reason, error: res.body?.message };
+  const config = res.body?.config ?? null;
+  if (config) await chrome.storage.local.set({ [SETTINGS_KEY]: { config, at: Date.now() } });
+  return { ok: true, config };
 }
 
 /** Danh sách thẻ gần nhất cho popup — lấy từ API. */

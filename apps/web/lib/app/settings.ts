@@ -1,5 +1,6 @@
 import 'server-only';
 import { MODES } from '@/lib/domain/modes';
+import { isStorableHost, normalizeHost } from '@/lib/domain/host';
 import type { StudyConfig, StudyMode } from '@/lib/domain/types';
 import type { Database } from '@/lib/ports/db';
 
@@ -36,6 +37,18 @@ export function sanitize(patch: Partial<StudyConfig>): Partial<StudyConfig> {
     const valid = new Set(MODES.map((m) => m.id));
     const picked = [...new Set(patch.modes)].filter((m): m is StudyMode => valid.has(m as StudyMode));
     out.modes = picked.length ? picked : ['recognition'];
+  }
+
+  // Danh sách domain tắt highlight. Chuẩn hoá + bỏ trùng ở ĐÂY, không ở client:
+  // extension, web và mọi client sau này phải cho ra cùng một danh sách, nếu không
+  // "đã tắt" ở nơi này lại thành "đang bật" ở nơi khác.
+  if (Array.isArray(patch.highlightOff)) {
+    const hosts = patch.highlightOff
+      .map((h) => normalizeHost(String(h)))
+      .filter(isStorableHost);
+    // Trần 500: đủ cho mọi người dùng thật, và giữ `users.settings` khỏi phình vì
+    // một client lỗi gửi lên cả lịch sử duyệt web.
+    out.highlightOff = [...new Set(hosts)].slice(0, 500);
   }
 
   return out;

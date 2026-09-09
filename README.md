@@ -9,7 +9,7 @@ Học từ vựng ngay trong lúc đọc web: bôi đen từ → tra nghĩa tạ
 
 | Thành phần | Trạng thái | Chạy thử |
 |---|---|---|
-| [`extension/`](extension/) | **v0.10.2 — dùng được** | `chrome://extensions` → Load unpacked |
+| [`extension/`](extension/) | **v0.11.1 — dùng được** | `chrome://extensions` → Load unpacked |
 | [`apps/web/`](apps/web/) | **dùng được** — Next.js 16 + TS, frontend *và* backend API | `cd apps/web && npm i && npm run dev` |
 | [`infra/`](infra/) | Postgres 17 trong Docker, 4 file migration | `cd infra && docker compose up -d` |
 | [`web/`](web/) | **cũ, chỉ để tham khảo** — bản Vite local-only, đã bị `apps/web` thay | — |
@@ -57,6 +57,7 @@ mode · sửa-xoá thẻ trên web · highlight in-page.
 | Tài liệu | Nội dung | Khi nào đọc |
 |---|---|---|
 | [REQUIREMENTS.md](REQUIREMENTS.md) | Chức năng: 4 persona, ~30 FR, 14 NFR, lộ trình M0–M5 | muốn biết sản phẩm làm gì |
+| [COMPETITION.md](COMPETITION.md) | Đối chiếu với Rememberry · Anki · Migaku · Readlang · Toucan · eJOY, và **tính năng nên làm thêm** (kèm cái cố ý không làm) | đang chọn việc tiếp theo |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Kiến trúc + **22 ADR** (quyết định và lý do) | muốn biết vì sao làm như vậy |
 | [PLATFORM.md](PLATFORM.md) | **Nguồn đúng nhất** về API, đa client, Google SSO, deploy | đang xây backend |
 | [SYNC.md](SYNC.md) | Hạn mức free-tier, dung lượng, domain, bảo mật DB. ⚠️ **có banner đánh dấu phần đã lỗi thời** | cần số liệu hạ tầng |

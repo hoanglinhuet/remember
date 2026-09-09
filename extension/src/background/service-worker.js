@@ -9,8 +9,8 @@
 import { runChain } from './providers.js';
 import {
   FLUSH_ALARM, connectWithCode, createDeck, disconnect, flushOutbox, getDecks,
-  getExisting, getRecentCards, getRemoteFronts, getStatus, refreshDecks, setApiBase,
-  syncAfterSave,
+  getExisting, getRecentCards, getRemoteFronts, getSettings, getStatus, hasToken,
+  refreshDecks, saveSettings, setApiBase, syncAfterSave,
 } from './sync.js';
 
 const STORE_KEY = 'cards';
@@ -18,9 +18,24 @@ const DECKS_KEY = 'decks';
 const CACHE_KEY = 'lookupCache';
 const QUOTA_KEY = 'quota';
 const MENU_ID = 'remember-lookup';
-const HL_KEY = 'highlightIndex';   // { fronts, at } — bộ từ để highlight trên trang
-const HL_ON_KEY = 'highlightOn';   // bật/tắt highlight, mặc định BẬT
+const HL_KEY = 'highlightIndex';    // { fronts, at } — bộ từ để highlight trên trang
+const HL_OFF_KEY = 'highlightOff';        // domain đã TẮT highlight (bản trên máy này)
+const HL_DIRTY_KEY = 'highlightOffDirty'; // bản trên máy này CHƯA đẩy lên server
 const HL_TTL_MS = 10 * 60_000;
+
+/**
+ * Chuẩn hoá host — PHẢI giống `normalizeHost()` ở apps/web/lib/domain/host.ts, nếu
+ * không tắt ở `www.abc.com` mà `abc.com` vẫn sáng.
+ */
+function normalizeHost(raw) {
+  return String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .replace(/[/?#].*$/, '')
+    .replace(/:\d+$/, '')
+    .replace(/^www\./, '');
+}
 const CACHE_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 ngày (ARCHITECTURE §7)
 const CACHE_MAX = 400;                          // giữ storage.local khỏi phình
 const DAILY_BUDGET = 800;                       // mỗi provider/ngày, tự đặt dưới hạn mức free
@@ -132,17 +147,131 @@ async function buildHighlightIndex() {
   return index;
 }
 
-/** Bộ từ cho content script; chỉ gọi API lại khi cache đã cũ. */
-async function highlightIndex({ force = false } = {}) {
-  const bag = await chrome.storage.local.get([HL_KEY, HL_ON_KEY]);
-  const on = bag[HL_ON_KEY] !== false;   // mặc định bật
-  const cached = bag[HL_KEY];
-  if (!on) return { ok: true, on, fronts: [] };
-  if (!force && cached && Date.now() - cached.at < HL_TTL_MS) {
-    return { ok: true, on, fronts: cached.fronts };
+async function readOffLocal() {
+  const bag = await chrome.storage.local.get([HL_OFF_KEY, HL_DIRTY_KEY]);
+  return {
+    hosts: Array.isArray(bag[HL_OFF_KEY]) ? bag[HL_OFF_KEY] : [],
+    dirty: bag[HL_DIRTY_KEY] === true,
+  };
+}
+
+/**
+ * Đẩy danh sách trên máy này lên server. Thành công thì hết `dirty` và lấy đúng bản
+ * server đã chuẩn hoá.
+ *
+ * Đây là hàng chờ một-món cho cài đặt, cùng tinh thần với `outbox` của thẻ: bấm công
+ * tắc lúc mất mạng vẫn phải ăn, và không được mất khi mạng có lại.
+ */
+async function flushHighlightOff() {
+  const local = await readOffLocal();
+  if (!local.dirty) return { ok: true, hosts: local.hosts };
+
+  const saved = await saveSettings({ highlightOff: local.hosts });
+  if (!saved.ok) return { ok: false, reason: saved.reason };
+
+  const hosts = (saved.config?.highlightOff ?? local.hosts).map(normalizeHost);
+  await chrome.storage.local.set({ [HL_OFF_KEY]: hosts, [HL_DIRTY_KEY]: false });
+  return { ok: true, hosts, pushed: true };
+}
+
+/**
+ * Danh sách domain đã TẮT highlight.
+ *
+ * Thứ tự ưu tiên — và đây là chỗ bản trước SAI:
+ *   1. Bản trên máy này nếu CHƯA đẩy lên được (`dirty`). Trước đây bản server luôn
+ *      thắng, nên bấm tắt lúc server không với tới được thì lượt ghi local bị chính
+ *      bản server (còn rỗng) xoá ngay ở lần đọc sau — công tắc "tự tick lại" và
+ *      highlight không bao giờ tắt. Thay đổi chưa đồng bộ phải sống cho tới khi đẩy
+ *      lên được.
+ *   2. Bản server (`users.settings.highlightOff`) — nguồn sự thật khi không còn gì
+ *      đang chờ đẩy, để tắt ở máy này thì máy khác cũng tắt.
+ *   3. Bản trên máy này, khi chưa ghép nối tài khoản hoặc chưa có cache.
+ *
+ * Mặc định là BẬT: không có trong danh sách nghĩa là tô.
+ */
+async function highlightOffList() {
+  const local = await readOffLocal();
+
+  if (local.dirty) {
+    // Thử đẩy ở nền; kết quả không ảnh hưởng câu trả lời lần này.
+    flushHighlightOff().catch(() => {});
+    return local.hosts;
   }
-  const index = await buildHighlightIndex();
-  return { ok: true, on, fronts: index.fronts };
+
+  const { config } = await getSettings({
+    maxAgeMs: HL_TTL_MS,
+    // Lượt làm mới nền phát hiện server có bản khác: ghi lại gương để các tab đang
+    // mở nghe `storage.onChanged` và tự sửa, không cần F5. Không ghi nếu trong lúc
+    // đó người dùng vừa bấm công tắc (`dirty`) — bản chờ đẩy phải được giữ.
+    onFresh: async (fresh) => {
+      if ((await readOffLocal()).dirty) return;
+      const hosts = (fresh.highlightOff ?? []).map(normalizeHost);
+      chrome.storage.local.set({ [HL_OFF_KEY]: hosts }).catch(() => {});
+    },
+  });
+
+  // Chưa ghép nối tài khoản, hoặc chưa có cache: bản trên máy này là tất cả những gì có.
+  if (!config) return local.hosts;
+
+  const hosts = (config.highlightOff ?? []).map(normalizeHost);
+  // Gương phải khớp server ngay ở lượt đọc này, không đợi lần sau.
+  if (JSON.stringify(hosts) !== JSON.stringify(local.hosts)) {
+    await chrome.storage.local.set({ [HL_OFF_KEY]: hosts });
+  }
+  return hosts;
+}
+
+/**
+ * Trả lời content script: trang này có tô hay không, và tô những từ nào.
+ *
+ * Gộp hai câu hỏi vào MỘT message: mỗi frame chỉ hỏi một lần khi mở trang. Tách ra
+ * hai message là gấp đôi số lần đánh thức service worker cho cùng một thông tin.
+ *
+ * Không có lời gọi mạng nào nằm trên đường đi này: bộ từ đọc từ cache (dựng lại khi
+ * quá TTL), danh sách domain đọc từ gương + làm mới ở nền.
+ */
+async function highlightFor(host, { force = false } = {}) {
+  const clean = normalizeHost(host);
+  const off = await highlightOffList();
+  if (clean && off.includes(clean)) {
+    return { ok: true, host: clean, on: false, fronts: [] };
+  }
+
+  const bag = await chrome.storage.local.get(HL_KEY);
+  const cached = bag[HL_KEY];
+  const index = !force && cached && Date.now() - cached.at < HL_TTL_MS
+    ? cached
+    : await buildHighlightIndex();
+  return { ok: true, host: clean, on: true, fronts: index.fronts };
+}
+
+/**
+ * Bật/tắt highlight cho một domain.
+ *
+ * GHI LOCAL TRƯỚC, đánh dấu `dirty`, rồi mới thử đẩy lên server. Thứ tự này quan
+ * trọng: công tắc phải ăn ngay trên máy này kể cả khi server không với tới được, và
+ * lượt ghi đó không được biến mất ở lần đọc sau (xem `highlightOffList`).
+ *
+ * Ghi `storage.local` cũng chính là tín hiệu cho các tab đang mở.
+ */
+async function setHighlightForHost(host, on) {
+  const clean = normalizeHost(host);
+  if (!clean) return { ok: false, error: 'không đọc được tên miền' };
+
+  const current = await highlightOffList();
+  const next = on ? current.filter((h) => h !== clean) : [...new Set([...current, clean])];
+  await chrome.storage.local.set({ [HL_OFF_KEY]: next, [HL_DIRTY_KEY]: true });
+
+  const flushed = await flushHighlightOff();
+  const list = flushed.ok && flushed.hosts ? flushed.hosts : next;
+
+  return {
+    ok: true,
+    host: clean,
+    on: !list.includes(clean),
+    synced: Boolean(flushed.ok),
+    reason: flushed.reason ?? null,
+  };
 }
 
 async function saveCard(payload) {
@@ -370,7 +499,11 @@ const handlers = {
   GET_SYNC_STATUS: async () => ({ ok: true, status: await getStatus() }),
   CONNECT_CODE: async (msg) => {
     const res = await connectWithCode(msg.payload?.code);
-    if (res.ok) await flushOutbox(readCards, markSynced);
+    if (res.ok) {
+      await flushOutbox(readCards, markSynced);
+      // Công tắc highlight bấm lúc chưa có tài khoản cũng phải theo lên server.
+      await flushHighlightOff().catch(() => {});
+    }
     return res;
   },
   DISCONNECT: async () => {
@@ -421,15 +554,33 @@ const handlers = {
     }
     return { ok: false, error: remote.error || 'không tạo được deck' };
   },
-  /** Content script hỏi bộ từ để highlight. */
-  GET_HIGHLIGHT: (msg) => highlightIndex({ force: Boolean(msg.payload?.force) }),
-  /** Popup bật/tắt highlight. Tắt thì xoá luôn bộ từ đang cache cho gọn. */
-  SET_HIGHLIGHT_ON: async (msg) => {
-    const on = Boolean(msg.payload?.on);
-    await chrome.storage.local.set({ [HL_ON_KEY]: on });
-    if (on) await buildHighlightIndex();
-    return { ok: true, on };
+  /** Content script hỏi: trang này có tô không, và tô từ nào. */
+  GET_HIGHLIGHT: (msg) => highlightFor(msg.payload?.host, {
+    force: Boolean(msg.payload?.force),
+  }),
+  /**
+   * Popup hỏi trạng thái của một domain để vẽ ô tick.
+   *
+   * Trả kèm `connected` và `pending`: nếu chưa ghép nối tài khoản thì công tắc này
+   * KHÔNG gọi API nào cả (chỉ lưu trên máy), và popup phải nói ra điều đó — không có
+   * thì người dùng chỉ thấy "bấm mà không thấy gọi API" rồi tưởng là lỗi.
+   */
+  GET_HIGHLIGHT_STATE: async (msg) => {
+    const host = normalizeHost(msg.payload?.host);
+    const off = await highlightOffList();
+    const { dirty } = await readOffLocal();
+    return {
+      ok: true,
+      host,
+      on: !(host && off.includes(host)),
+      offCount: off.length,
+      connected: await hasToken(),
+      pending: dirty,
+    };
   },
+  /** Popup bật/tắt highlight cho domain đang mở. */
+  SET_HIGHLIGHT_FOR_HOST: (msg) =>
+    setHighlightForHost(msg.payload?.host, Boolean(msg.payload?.on)),
   SPEAK: (msg) => speak(msg.payload),
   STOP_SPEAK: async () => {
     try {
@@ -484,11 +635,13 @@ chrome.runtime.onInstalled.addListener(() => {
   // được dựng bằng phiên bản trước (và bằng luật khác), nên sau khi cập nhật
   // extension nó vẫn còn tô những từ đã xoá.
   buildHighlightIndex().catch(() => {});
+  flushHighlightOff().catch(() => {});
 });
 chrome.runtime.onStartup.addListener(() => {
   registerMenu();
   clearBadge();
   buildHighlightIndex().catch(() => {});
+  flushHighlightOff().catch(() => {});
   // Mở browser lại: có thể đã đăng nhập web từ lần trước, thử đẩy hàng chờ.
   flushOutbox(readCards, markSynced).catch(() => {});
 });

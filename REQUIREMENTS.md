@@ -82,6 +82,7 @@ Hỗ trợ PDF mở bằng viewer tích hợp của trình duyệt (có text lay
 
 **FR-A4 · Highlight thẻ đã lưu trên trang** [S]
 - Từ đã có thẻ được tô nhẹ ngay trên trang đang đọc (bật/tắt, chọn màu/độ đậm).
+- Bật/tắt **theo từng tên miền**, không phải một công tắc toàn cục: người dùng muốn tắt ở đúng chỗ gây rối và giữ bật ở chỗ đang học. Mặc định BẬT, chỉ lưu danh sách đã tắt (`users.settings.highlightOff`) — lưu bên "đã bật" sẽ phình vô hạn theo số domain từng ghé.
 - Hover vào highlight → tooltip nghĩa + trạng thái thẻ (due / đã học / leech).
 - So khớp trên **lemma/normalized form** để không bỏ sót biến thể đơn giản (số nhiều, thời).
 - Không highlight trong `input`, `textarea`, `contenteditable`, `code`/`pre` (tuỳ chọn).

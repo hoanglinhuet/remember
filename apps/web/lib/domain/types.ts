@@ -118,6 +118,19 @@ export interface StudyConfig {
    * mọi mode, xem `availableModes()`.
    */
   modes: StudyMode[];
+
+  /**
+   * Các tên miền TẮT highlight (extension). Mặc định là BẬT, nên đây là danh sách
+   * ngoại lệ — chỉ lưu cái đã tắt.
+   *
+   * Vì sao lưu danh sách tắt chứ không lưu danh sách bật: người dùng đọc hàng nghìn
+   * domain khác nhau, còn số domain họ chủ động tắt thì đếm trên đầu ngón tay. Lưu
+   * bên bật sẽ phình vô hạn và làm hành vi mặc định phụ thuộc vào việc đã ghé thăm
+   * hay chưa.
+   *
+   * Host đã chuẩn hoá bằng `normalizeHost()` (bỏ `www.`, bỏ port).
+   */
+  highlightOff: string[];
 }
 
 export const DEFAULT_CONFIG: StudyConfig = {
@@ -131,6 +144,8 @@ export const DEFAULT_CONFIG: StudyConfig = {
   levelThresholds: [7, 30, 180],
   // Mặc định chỉ nhận biết: giống hành vi cũ, người dùng tự bật thêm khi muốn.
   modes: ['recognition'],
+  // Highlight bật ở mọi trang cho tới khi người dùng tự tắt từng domain.
+  highlightOff: [],
 };
 
 export interface DeckSummary extends Deck {

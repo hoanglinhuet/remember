@@ -1,33 +1,21 @@
 /**
- * Remember — popup: danh sách thẻ gần nhất.
+ * Remember — popup.
  *
- * Nguồn dữ liệu: **API** khi đã kết nối tài khoản; lùi về bản local khi chưa kết nối
- * hoặc mất mạng. Mọi node dựng bằng DOM API, không innerHTML.
+ * Chỉ còn ba việc: cho biết đã ghép nối tài khoản chưa (`account.js`), bật/tắt
+ * highlight cho tên miền đang mở, và xuất dữ liệu ra file.
+ *
+ * KHÔNG còn danh sách thẻ ở đây: quản lý thẻ nằm trên web app (`/decks`), nơi có tìm
+ * kiếm, phân trang và xoá. Một danh sách 50 thẻ trong popup 340px chỉ là bản xem
+ * thiếu của cùng dữ liệu đó, và nó buộc popup phải gọi API mỗi lần mở.
+ *
+ * Mọi node dựng bằng DOM API, không innerHTML.
  */
-
-const POS_LABEL = {
-  noun: 'danh từ', verb: 'động từ', adjective: 'tính từ', adverb: 'trạng từ',
-  pronoun: 'đại từ', preposition: 'giới từ', conjunction: 'liên từ',
-  interjection: 'thán từ', determiner: 'từ hạn định', numeral: 'số từ',
-  phrase: 'cụm từ', idiom: 'thành ngữ', abbreviation: 'viết tắt', affix: 'phụ tố',
-};
-
-const listEl = document.querySelector('[data-role="list"]');
-const countEl = document.querySelector('[data-role="count"]');
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (text != null) node.textContent = text;
   return node;
-}
-
-function hostOf(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '');
-  } catch {
-    return '';
-  }
 }
 
 try {
@@ -65,132 +53,140 @@ async function exportAll(btn) {
 const exportBtn = document.querySelector('[data-role="export"]');
 exportBtn?.addEventListener('click', () => exportAll(exportBtn));
 
-function render(cards, source) {
-  listEl.textContent = '';
-  countEl.textContent = cards.length
-    ? `${cards.length} thẻ · ${source === 'api' ? 'từ tài khoản' : 'trên máy này'}`
-    : '';
-
-  if (!cards.length) {
-    listEl.append(el('li', 'empty',
-      source === 'api'
-        ? 'Tài khoản chưa có thẻ nào. Bôi đen một từ trên trang web để lưu.'
-        : 'Chưa có thẻ nào. Thử bôi đen một từ trên trang web.'));
-    return;
-  }
-
-  for (const card of cards) {
-    const li = el('li');
-    const row = el('div', 'row');
-    row.append(el('span', 'front', card.front));
-
-    if (card.reading) {
-      row.append(el('span', 'ipa',
-        card.readingType === 'ipa' ? `/${card.reading}/` : card.reading));
-    }
-    if (card.pos) {
-      const badge = el('span', 'pos', POS_LABEL[card.pos] || card.pos);
-      badge.title = card.pos;
-      row.append(badge);
-    }
-    if (card.seenCount > 1) row.append(el('span', 'badge', `×${card.seenCount}`));
-
-    // Thẻ từ API thì mặc nhiên đã đồng bộ; chỉ bản local cần dấu hiệu.
-    if (source !== 'api') {
-      const sync = el('span', 'sync-dot', card.synced ? '☁' : '·');
-      sync.title = card.synced ? 'đã đồng bộ' : 'chỉ có trên máy này';
-      row.append(sync);
-
-      const del = el('button', 'del', '×');
-      del.type = 'button';
-      del.title = 'Xoá thẻ';
-      del.addEventListener('click', async () => {
-        await chrome.runtime.sendMessage({ type: 'DELETE_CARD', payload: { id: card.id } });
-        load();
-      });
-      row.append(del);
-    }
-    li.append(row);
-
-    if (card.back?.length) li.append(el('div', 'back', card.back.join(' · ')));
-    if (card.deckName) li.append(el('span', 'deck', card.deckName));
-    if (card.contextSentence) li.append(el('div', 'ctx', card.contextSentence));
-
-    const host = hostOf(card.sourceUrl);
-    if (host) {
-      const a = el('a', 'src', host);
-      a.href = card.sourceUrl;
-      a.target = '_blank';
-      a.rel = 'noreferrer';
-      li.append(a);
-    }
-    listEl.append(li);
-  }
-}
-
-async function load() {
-  try {
-    // Ưu tiên API: khi đã kết nối tài khoản thì đó là nguồn sự thật.
-    const remote = await chrome.runtime.sendMessage({
-      type: 'GET_REMOTE_CARDS',
-      payload: { limit: 50 },
-    });
-    if (remote?.ok) {
-      render(remote.cards, 'api');
-      return;
-    }
-    const local = await chrome.runtime.sendMessage({ type: 'GET_CARDS' });
-    render(local?.cards || [], 'local');
-  } catch {
-    listEl.textContent = '';
-    listEl.append(el('li', 'empty', 'Không kết nối được service worker. Thử tải lại extension.'));
-  }
-}
-
 /**
- * Công tắc highlight.
+ * Công tắc highlight — THEO TỪNG TÊN MIỀN.
  *
- * Phải có chỗ TẮT: highlight vẽ lên mọi trang, và có lúc người ta chỉ muốn đọc.
- * Trạng thái đọc trực tiếp từ storage (mặc định BẬT) chứ không hỏi service worker —
- * ô tick không được nhảy sau khi popup đã hiện.
+ * Vì sao theo domain chứ không phải một công tắc toàn cục: người ta muốn tắt ở đúng
+ * chỗ gây rối (dashboard công việc, trang tin đọc nhanh) và giữ bật ở chỗ đang học.
+ * Một công tắc toàn cục buộc họ chọn giữa "rối khắp nơi" và "không có tính năng".
+ *
+ * Mặc định BẬT, và **chỉ trạng thái TẮT được lưu** — danh sách `highlightOff` nằm
+ * trong `users.settings` ở DB (qua `/v1/me`), nên tắt ở máy này thì máy khác cũng
+ * tắt. Chưa ghép nối tài khoản thì lưu trong `storage.local` của extension.
+ *
+ * Tên miền lấy từ tab đang mở bằng quyền `activeTab` — quyền này được cấp đúng lúc
+ * người dùng bấm vào icon extension, nên không cần xin quyền `tabs` (quyền đọc URL
+ * của MỌI tab, lúc nào cũng có hiệu lực).
  */
 async function setUpHighlightToggle() {
   const box = document.querySelector('[data-role="hl"]');
   const note = document.querySelector('[data-role="hl-note"]');
+  const hostEl = document.querySelector('[data-role="hl-host"]');
   if (!box) return;
 
-  const bag = await chrome.storage.local.get(['highlightOn', 'highlightIndex']);
-  box.checked = bag.highlightOn !== false;
-
-  const describe = () => {
-    const n = bag.highlightIndex?.fronts?.length ?? 0;
-    note.textContent = box.checked
-      ? (n ? `Đang tô ${n} từ đã lưu trên trang đang đọc.` : 'Tô các từ đã có thẻ ngay trên trang đang đọc.')
-      : 'Đang tắt — trang không được tô gì.';
+  const tabOf = async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      return tab || null;
+    } catch {
+      return null;
+    }
   };
-  describe();
+
+  const tab = await tabOf();
+  let host = '';
+  try {
+    host = tab?.url ? new URL(tab.url).hostname : '';
+  } catch { /* URL lạ (chrome://, about:) -> coi như không có host */ }
+
+  if (!host) {
+    // Trang nội bộ của browser (chrome://…, trang mới) không có content script nào
+    // chạy, nên công tắc ở đây vô nghĩa — nói thẳng thay vì để một ô tick chết.
+    // `tab.url` rỗng cũng vào đây: đó là dấu hiệu quyền `activeTab` chưa có tác dụng.
+    hostEl.textContent = 'trang này';
+    note.textContent = tab
+      ? 'Không đọc được tên miền của tab (trang nội bộ của browser, hoặc thiếu quyền).'
+      : 'Không đọc được tab đang mở.';
+    box.checked = false;
+    box.disabled = true;
+    return;
+  }
+
+  const state = await chrome.runtime.sendMessage({
+    type: 'GET_HIGHLIGHT_STATE',
+    payload: { host },
+  }).catch(() => null);
+
+  const shown = state?.host || host;
+  hostEl.textContent = shown;
+  box.checked = state ? state.on : true;
+  if (!state) {
+    // Không hỏi được service worker: nói ra, đừng để ô tick mặc định "đang bật"
+    // trông như một trạng thái đã đọc được.
+    note.textContent = 'Không đọc được trạng thái — thử tải lại extension.';
+  }
+
+  const bag = await chrome.storage.local.get('highlightIndex');
+  const describe = (extra) => {
+    if (extra) { note.textContent = extra; return; }
+    const n = bag.highlightIndex?.fronts?.length ?? 0;
+    const where = box.checked
+      ? (n ? `Đang tô ${n} từ đã lưu ở tên miền này.` : 'Tô các từ đã có thẻ ngay trên trang đang đọc.')
+      : `Đã tắt ở ${shown}. Các trang khác vẫn tô.`;
+    // Nói luôn trạng thái đồng bộ: chưa ghép nối thì công tắc KHÔNG gọi API nào,
+    // và đó là thiết kế, không phải lỗi.
+    const sync = state && !state.connected
+      ? ' Chỉ lưu trên máy này — chưa ghép nối tài khoản.'
+      : (state?.pending ? ' Có thay đổi chưa đẩy lên server.' : '');
+    note.textContent = where + sync;
+  };
+  if (state) describe();
+
+  /**
+   * Bắn tín hiệu TRỰC TIẾP vào tab đang mở.
+   *
+   * Không dựa vào `storage.onChanged` một mình: nếu tab đang chạy content script của
+   * bản extension CŨ (Reload extension mà chưa F5 tab) thì bản cũ đó không nghe được
+   * gì, và phần đã tô sẽ đứng nguyên — nhìn ra đúng như "tắt mà không tắt".
+   *
+   * Không có ai trả lời = tab đó không có content script còn sống ⇒ nói người dùng F5,
+   * thay vì im lặng để họ tưởng công tắc hỏng.
+   */
+  const poke = async () => {
+    if (!tab?.id) return false;
+    try {
+      const res = await chrome.tabs.sendMessage(tab.id, { type: 'HIGHLIGHT_CHANGED' });
+      return Boolean(res?.ok);
+    } catch {
+      return false;
+    }
+  };
 
   box.addEventListener('change', async () => {
     box.disabled = true;
     try {
-      await chrome.runtime.sendMessage({
-        type: 'SET_HIGHLIGHT_ON',
-        payload: { on: box.checked },
+      const res = await chrome.runtime.sendMessage({
+        type: 'SET_HIGHLIGHT_FOR_HOST',
+        payload: { host: shown, on: box.checked },
       });
+      if (!res?.ok) throw new Error(res?.error || 'không đổi được');
+      box.checked = res.on;
       Object.assign(bag, await chrome.storage.local.get('highlightIndex'));
-      describe();
-    } catch {
-      // Service worker không trả lời: trả ô tick về trạng thái thật, đừng để UI nói dối.
+
+      if (!(await poke())) {
+        note.textContent = 'Đã lưu, nhưng trang đang mở chạy bản cũ — tải lại trang (F5).';
+      } else if (res.synced) {
+        describe();
+      } else {
+        // Chưa đồng bộ thì phải nói RÕ VÌ SAO — "đã lưu trên máy này" mà không nói
+        // lý do thì người dùng không biết là đang thiếu tài khoản hay mất mạng.
+        describe(res.reason === 'no_token'
+          ? 'Đã lưu trên máy này — chưa ghép nối tài khoản nên máy khác chưa biết.'
+          : 'Đã lưu trên máy này — chưa đẩy lên server được, sẽ tự thử lại.');
+      }
+    } catch (e) {
+      // Trả ô tick về trạng thái thật, đừng để UI nói dối.
       box.checked = !box.checked;
-      note.textContent = 'Không đổi được — thử tải lại extension.';
+      note.textContent = `Không đổi được — ${String(e?.message || e)}`;
     } finally {
       box.disabled = false;
     }
   });
 }
 
-// account.js gọi lại sau khi kết nối / ngắt kết nối để danh sách đổi nguồn ngay.
-window.reloadCards = load;
-
-load();
-setUpHighlightToggle();
+// Lỗi ở đây từng làm cả công tắc chết im lặng (listener không được gắn, bấm không
+// gọi gì cả). Hiện lỗi ra ngay trong popup thay vì để nó biến mất.
+setUpHighlightToggle().catch((e) => {
+  const note = document.querySelector('[data-role="hl-note"]');
+  if (note) note.textContent = `Công tắc lỗi: ${String(e?.message || e)}`;
+});
