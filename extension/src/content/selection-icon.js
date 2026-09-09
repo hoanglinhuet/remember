@@ -360,14 +360,8 @@
     return rect && (rect.width || rect.height) ? rect : null;
   }
 
-  /** Câu chứa từ, lấy từ block cha gần nhất (FR-B1: context_sentence). */
-  function contextSentence(range, term) {
-    let node = range.commonAncestorContainer;
-    if (node.nodeType === 3) node = node.parentElement;
-    const block = node?.closest?.('p, li, td, dd, blockquote, h1, h2, h3, h4, figcaption, section, article, div');
-    const text = (block?.innerText || '').replace(/\s+/g, ' ').trim();
-    if (!text || text.length > 4000) return '';
-
+  /** Cắt lấy câu chứa `term` trong một đoạn văn bản đã chuẩn hoá khoảng trắng. */
+  function sentenceAround(text, term) {
     const at = text.toLowerCase().indexOf(term.toLowerCase());
     if (at < 0) return text.slice(0, 220);
 
@@ -377,6 +371,47 @@
     const right = rightRaw < 0 ? text.length : at + rightRaw + 1;
     const sentence = text.slice(left ? left + 2 : 0, right).trim();
     return sentence.length > 320 ? sentence.slice(0, 320) + '…' : sentence;
+  }
+
+  /**
+   * Ngữ cảnh khi đang đọc PDF trong viewer pdf.js (Firefox dùng nó làm viewer mặc
+   * định; nhiều trang web cũng nhúng nó).
+   *
+   * Vì sao cần nhánh riêng: pdf.js dựng mỗi dòng chữ thành một `<span>` định vị tuyệt
+   * đối trong `.textLayer`, nên "block cha" của một từ là CẢ TRANG. `innerText` của
+   * cả trang thường vượt ngưỡng 4000 ký tự ⇒ nhánh thường trả về rỗng, và thẻ lưu từ
+   * PDF sẽ không bao giờ có câu ngữ cảnh (mất luôn mode "điền vào câu").
+   *
+   * Ở đây lấy span chứa từ cộng hai span mỗi phía — đúng phạm vi một câu thường nằm
+   * trong đó, và nối bằng dấu cách vì mỗi span là một dòng riêng.
+   */
+  function pdfLayerText(range) {
+    let node = range.commonAncestorContainer;
+    if (node.nodeType === 3) node = node.parentElement;
+    const layer = node?.closest?.('.textLayer');
+    if (!layer) return '';
+
+    const spans = [...layer.children];
+    // Span trực tiếp dưới `.textLayer` mới là "dòng"; selection có thể nằm trong thẻ
+    // con (pdf.js bọc thêm <br>, <mark> khi tìm kiếm).
+    let line = node;
+    while (line && line.parentElement !== layer) line = line.parentElement;
+    const at = spans.indexOf(line);
+    const near = at < 0 ? spans : spans.slice(Math.max(0, at - 2), at + 3);
+    return near.map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  /** Câu chứa từ, lấy từ block cha gần nhất (FR-B1: context_sentence). */
+  function contextSentence(range, term) {
+    const fromPdf = pdfLayerText(range);
+    if (fromPdf) return sentenceAround(fromPdf, term);
+
+    let node = range.commonAncestorContainer;
+    if (node.nodeType === 3) node = node.parentElement;
+    const block = node?.closest?.('p, li, td, dd, blockquote, h1, h2, h3, h4, figcaption, section, article, div');
+    const text = (block?.innerText || '').replace(/\s+/g, ' ').trim();
+    if (!text || text.length > 4000) return '';
+    return sentenceAround(text, term);
   }
 
   function pageLang() {
@@ -1170,6 +1205,78 @@
       setStatus('mất kết nối extension, thử lại', 'err');
     }
   }
+
+  // -------------------------------------------- mở panel không cần selection
+
+  /**
+   * Rect giả để neo panel khi KHÔNG có vùng chọn nào đọc được: **trên cùng bên phải**.
+   *
+   * Dùng cho viewer PDF tích hợp của Chrome: PDF được vẽ bởi plugin trong một
+   * `<embed>`, nên `window.getSelection()` ở tài liệu này luôn rỗng — không có cách
+   * nào lấy vùng chọn hay toạ độ của nó. Nhưng tài liệu bọc ngoài VẪN chạy content
+   * script, nên panel vẫn hiện được; chỉ là neo ở góc thay vì cạnh con chữ.
+   *
+   * Đặt `right` bằng đúng bề rộng viewport để `place()` kẹp panel sát mép phải (nó
+   * tự lùi vào 8px), và `bottom` sát mép trên. `place()` cũng vì thế đặt
+   * `--origin: top right`, nên panel "mọc ra" từ đúng góc nó đứng.
+   */
+  function topRightRect() {
+    const x = window.innerWidth;
+    return { left: x, right: x, top: 8, bottom: 8, width: 0, height: 0 };
+  }
+
+  /**
+   * Service worker yêu cầu mở panel cho một từ (từ menu chuột phải).
+   *
+   * HAI ĐƯỜNG, và luôn ưu tiên đường thứ nhất:
+   *
+   *  1. **Đọc được vùng chọn thật** (trang web thường, PDF trong pdf.js) — đi ĐÚNG
+   *     luồng bôi đen: `showIcon()` + `openPanel()`. Nhờ vậy panel neo cạnh con chữ,
+   *     có câu ngữ cảnh, và hành vi giống hệt khi bôi đen — không phải một luồng thứ
+   *     hai trông khác đi vì được gọi từ menu.
+   *  2. **Không đọc được** (viewer PDF tích hợp của Chrome: plugin vẽ trong `<embed>`
+   *     nên `getSelection()` luôn rỗng) — dùng chữ mà BROWSER đưa sang và neo panel
+   *     ở góc trên bên phải.
+   *
+   * Phải `reply()` đúng kết quả: service worker lùi về "lưu thẻ thô" khi không mở
+   * được panel, nên báo `ok` sai sẽ cho ra thẻ trống mà người dùng không hề biết —
+   * đúng cái nhìn ra ngoài như "bấm mà không có gì xảy ra".
+   */
+  chrome.runtime?.onMessage?.addListener((msg, _sender, reply) => {
+    if (msg?.type !== 'SHOW_LOOKUP') return false;
+
+    const text = String(msg.payload?.text ?? '').replace(/\s+/g, ' ').trim();
+    if (!text || text.length > 1000) {
+      reply({ ok: false, error: 'không có chữ để tra' });
+      return false;
+    }
+
+    try {
+      ensureUi();
+      const sel = readSelection();
+      if (sel) {
+        // Có vùng chọn: dùng CHÍNH nó (chữ, toạ độ, câu ngữ cảnh) — dữ liệu của nó
+        // luôn tốt hơn `info.selectionText` của menu, thứ đã bị cắt khoảng trắng.
+        showIcon(sel);
+        openPanel();
+      } else {
+        hideAll();
+        current = {
+          text,
+          rect: topRightRect(),
+          lang: pageLang(),
+          // Plugin PDF không cho đọc chữ quanh vùng chọn ⇒ không có câu ngữ cảnh.
+          // Thà để trống còn hơn bịa ra một câu không có trong tài liệu.
+          contextSentence: '',
+        };
+        openPanel();
+      }
+      reply({ ok: true });
+    } catch (e) {
+      reply({ ok: false, error: String(e?.message || e) });
+    }
+    return false;
+  });
 
   // ------------------------------------------------------------------ Events
 

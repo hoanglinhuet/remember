@@ -77,8 +77,19 @@ Ký hiệu: **[M]** must-have v1 · **[S]** should-have · **[C]** could-have (v
 **FR-A2 · Tra từ trong popup extension** [M]
 Ô nhập tự do, chọn cặp ngôn ngữ, lịch sử 50 lượt tra gần nhất, lưu thẻ trực tiếp.
 
-**FR-A3 · Hoạt động trong PDF** [S]
-Hỗ trợ PDF mở bằng viewer tích hợp của trình duyệt (có text layer). PDF ảnh/scan (cần OCR) ngoài phạm vi v1.
+**FR-A3 · Hoạt động trong PDF** [S] — ĐÃ LÀM, nhưng hai viewer khác nhau về bản chất
+
+| Viewer | Bôi đen → icon nổi | Menu chuột phải → panel | Vì sao |
+|---|---|---|---|
+| **pdf.js** (viewer mặc định của Firefox; nhiều trang cũng nhúng) | ✅ | ✅ | có text layer thật trong DOM ⇒ `getSelection()` chạy như trang web thường |
+| **Viewer tích hợp của Chrome/Edge** | ❌ | ✅ | PDF do plugin vẽ trong `<embed>`; content script chạy ở tài liệu bọc ngoài nhưng `getSelection()` của nó LUÔN rỗng. Menu chuột phải do browser dựng nên nó biết vùng chọn và đưa qua `info.selectionText` |
+
+- Câu ngữ cảnh: với pdf.js lấy được (span chứa từ + 2 span mỗi phía — `.textLayer` không có block cha nào nhỏ hơn cả trang); với viewer Chrome thì **không có** và để trống, không bịa.
+- PDF cục bộ (`file://`) cần bật "Allow access to file URLs" cho extension.
+- PDF ảnh/scan (cần OCR) ngoài phạm vi v1.
+- Muốn bôi đen chạy được cả trên Chrome thì phải tự đóng gói pdf.js và chuyển hướng
+  `*.pdf` sang viewer của mình — đổi trải nghiệm PDF của người dùng ở mọi trang, nên
+  chưa làm; xem [COMPETITION.md](COMPETITION.md) §5-B8.
 
 **FR-A4 · Highlight thẻ đã lưu trên trang** [S]
 - Từ đã có thẻ được tô nhẹ ngay trên trang đang đọc (bật/tắt, chọn màu/độ đậm).

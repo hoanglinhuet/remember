@@ -621,7 +621,9 @@ function registerMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: MENU_ID,
-      title: 'Remember: lưu "%s"',
+      // Không còn `%s`: mục menu giờ MỞ PANEL để chọn nghĩa, không lưu thẳng, nên
+      // nhãn nói việc sẽ xảy ra chứ không nhắc lại từ người dùng vừa bôi đen.
+      title: 'Translate with Remember',
       contexts: ['selection'],
     });
   });
@@ -653,8 +655,39 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   await flushOutbox(readCards, markSynced);
 });
 
+/**
+ * Menu chuột phải — và đây cũng là ĐƯỜNG DUY NHẤT dùng được trong viewer PDF tích hợp
+ * của Chrome.
+ *
+ * Trong viewer đó, PDF do plugin vẽ bên trong một `<embed>`: content script chạy ở
+ * tài liệu bọc ngoài nhưng `window.getSelection()` của nó luôn rỗng, nên icon nổi
+ * khi bôi đen không thể hoạt động. Menu chuột phải thì do BROWSER dựng, nên nó biết
+ * vùng chọn trong plugin và đưa sang `info.selectionText`.
+ *
+ * Ưu tiên MỞ PANEL trong tab thay vì lưu thẳng: lưu thẳng cho ra thẻ chỉ có mặt trước,
+ * không nghĩa, không phiên âm — người dùng phải tự sửa sau. Mở panel thì họ chọn đúng
+ * nghĩa muốn nhớ, y như khi bôi đen trên trang web thường.
+ *
+ * Không có content script trả lời (PDF cục bộ chưa cấp quyền `file://`, trang bị loại
+ * trừ trong manifest, hoặc tab chạy bản cũ) thì mới lùi về lưu thô — thà có một thẻ
+ * cần sửa hơn là mất hẳn từ vừa đọc.
+ */
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== MENU_ID || !info.selectionText) return;
+
+  if (tab?.id != null) {
+    // Gửi ĐÚNG frame vừa được bấm. Content script chạy ở mọi frame
+    // (`all_frames: true`), nên gửi cho cả tab sẽ mở panel trong từng iframe một, và
+    // câu trả lời đầu tiên tới lại là của frame bất kỳ — không nhất thiết là frame
+    // chứa vùng chọn.
+    const target = info.frameId != null ? { frameId: info.frameId } : undefined;
+    const opened = await chrome.tabs
+      .sendMessage(tab.id, { type: 'SHOW_LOOKUP', payload: { text: info.selectionText } }, target)
+      .then((r) => Boolean(r?.ok))
+      .catch(() => false);
+    if (opened) return;
+  }
+
   await saveCard({
     front: info.selectionText,
     langFrom: 'auto',
